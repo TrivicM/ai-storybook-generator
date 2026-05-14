@@ -57,6 +57,8 @@ Main responsibilities in book_maker.py:
 - Optional local backend: Automatic1111 Stable Diffusion WebUI with API enabled
 - Optional fallback backend: OpenAI API key
 
+Note: Project uses Python 3.10 due to compatibility constraints with PyTorch and Stable Diffusion WebUI.
+
 Python packages are listed in requirements.txt:
 
 - requests
