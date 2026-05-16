@@ -94,12 +94,24 @@ class Automatic1111Client:
             "n_iter": 1,
         }
 
-        resp = requests.post(
-            f"{self.base_url}/sdapi/v1/txt2img",
-            json=payload,
-            timeout=self.timeout,
-        )
-        resp.raise_for_status()
+        try:
+            resp = requests.post(
+                f"{self.base_url}/sdapi/v1/txt2img",
+                json=payload,
+                timeout=self.timeout,
+            )
+        except requests.ReadTimeout as exc:
+            raise requests.ReadTimeout(
+                f"txt2img request timed out after {self.timeout}s. "
+                "On CPU, generation can take longer. Increase --timeout (for example 900) "
+                "or reduce steps/resolution."
+            ) from exc
+
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as exc:
+            body = resp.text[:1000] if resp is not None else ""
+            raise requests.HTTPError(f"{exc}; response body: {body}", response=resp) from exc
         data = resp.json()
         if not data.get("images"):
             raise RuntimeError("Image generation returned no images.")
@@ -164,6 +176,105 @@ def ask(prompt: str, default: str | None = None) -> str:
     if not value and default is not None:
         return default
     return value
+
+
+def ask_int(prompt: str, default: int, min_value: int, max_value: int) -> int:
+    while True:
+        raw = ask(prompt, str(default)).strip()
+        try:
+            value = int(raw)
+        except ValueError:
+            print("Please enter a whole number.")
+            continue
+
+        if value < min_value or value > max_value:
+            print(f"Please enter a value between {min_value} and {max_value}.")
+            continue
+        return value
+
+
+def ask_float(prompt: str, default: float, min_value: float, max_value: float) -> float:
+    while True:
+        raw = ask(prompt, str(default)).strip()
+        try:
+            value = float(raw)
+        except ValueError:
+            print("Please enter a valid number.")
+            continue
+
+        if value < min_value or value > max_value:
+            print(f"Please enter a value between {min_value} and {max_value}.")
+            continue
+        return value
+
+
+def ask_generation_settings(args: argparse.Namespace) -> None:
+    print("\nImage generation setup:")
+    print("1. Recommended setup (no manual tuning)")
+    print("2. Advanced setup (fine control)")
+
+    setup_mode = ask("Choose setup mode (1/2)", "1").strip()
+    if setup_mode not in {"1", "2"}:
+        setup_mode = "1"
+
+    if setup_mode == "1":
+        # CPU-safe defaults for local generation (works better on non-CUDA machines).
+        args.image_width = 512
+        args.image_height = 768
+        args.steps = 22
+        args.cfg_scale = 6.8
+        args.sampler = "Euler a"
+        print("\nUsing recommended CPU-safe values:")
+        print("- Resolution: 512 x 768")
+        print("- Steps: 22")
+        print("- CFG scale: 6.8")
+        print("- Sampler: Euler a")
+    else:
+        print("\nAdvanced setup:")
+        print("Tip: larger images and more steps give more detail but take longer.")
+        print("Pixel guide: 1024x1536 is a good portrait page; 1536x1024 is landscape.")
+        print("Bigger numbers mean larger images (and slower generation).")
+        args.image_width = ask_int("Image width (pixels, e.g. 1024)", args.image_width, 256, 4096)
+        args.image_height = ask_int("Image height (pixels, e.g. 1536)", args.image_height, 256, 4096)
+        args.steps = ask_int("Detail level (steps)", args.steps, 1, 150)
+        args.cfg_scale = ask_float(
+            "Prompt strength (CFG, usually 6-8; higher is NOT always better)",
+            args.cfg_scale,
+            1.0,
+            30.0,
+        )
+        args.sampler = ask(
+            "Sampler (example: DPM++ 2M Karras, Euler a)",
+            args.sampler,
+        ).strip() or args.sampler
+
+    print("\nCharacter consistency:")
+    print("1. Keep the same character look across pages (recommended)")
+    print("2. Allow more variation from page to page")
+    consistency_mode = ask("Choose consistency mode (1/2)", "1").strip()
+    if consistency_mode not in {"1", "2"}:
+        consistency_mode = "1"
+
+    args.keep_consistent_look = consistency_mode == "1"
+    if args.keep_consistent_look:
+        args.seed = ask_int("Base seed", args.seed, 0, 2147483647)
+
+    print("\nUsing generation settings:")
+    print(f"- Resolution: {args.image_width} x {args.image_height}")
+    print(f"- Steps: {args.steps}")
+    print(f"- CFG scale: {args.cfg_scale}")
+    print(f"- Sampler: {args.sampler}")
+    print(f"- Character consistency: {'on' if args.keep_consistent_look else 'variation allowed'}")
+    print(f"- Seed: {args.seed if args.keep_consistent_look else 'random each page'}")
+
+
+def ask_openai_fallback_consent() -> bool:
+    print("\nPrivacy notice: OpenAI fallback sends prompts to OpenAI Images API.")
+    print(
+        "This may include scene text and a short story summary used for the cover illustration prompt."
+    )
+    answer = ask("Allow OpenAI fallback for image generation? (y/n)", "n").strip().lower()
+    return answer in {"y", "yes"}
 
 
 def ask_multiline_story() -> str:
@@ -624,8 +735,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-dir", type=str, default="output", help="Directory for assets and PDF.")
     parser.add_argument("--max-scenes", type=int, default=14, help="Maximum number of story scenes/pages.")
-    parser.add_argument("--sd-base-url", type=str, default="http://127.0.0.1:7860", help="Local SD API URL.")
-    parser.add_argument("--timeout", type=int, default=180, help="HTTP timeout in seconds.")
+    parser.add_argument("--sd-base-url", type=str, default="http://127.0.0.1:7861", help="Local SD API URL.")
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=120000,
+        help="HTTP timeout in seconds (CPU generation can be slow; 120000 is recommended).",
+    )
     parser.add_argument("--image-width", type=int, default=1792, help="Generated image width in pixels.")
     parser.add_argument("--image-height", type=int, default=2560, help="Generated image height in pixels.")
     parser.add_argument("--steps", type=int, default=35, help="Sampling steps.")
@@ -716,6 +832,8 @@ def main() -> None:
     if proceed not in {"y", "yes"}:
         raise SystemExit("Canceled by user.")
 
+    ask_generation_settings(args)
+
     client = Automatic1111Client(args.sd_base_url, args.timeout)
     openai_client = OpenAIImagesClient(
         api_key=args.openai_api_key or os.getenv("OPENAI_API_KEY", ""),
@@ -743,15 +861,18 @@ def main() -> None:
 
         if args.fallback_provider in {"openai", "auto"}:
             if openai_client.is_available():
-                use_openai_fallback = True
-                provider_transitions.append(
-                    {
-                        "from": "local_stable_diffusion",
-                        "to": "openai_fallback",
-                        "reason": "local_sd_unavailable",
-                    }
-                )
-                print("Using OpenAI Images fallback provider.")
+                if ask_openai_fallback_consent():
+                    use_openai_fallback = True
+                    provider_transitions.append(
+                        {
+                            "from": "local_stable_diffusion",
+                            "to": "openai_fallback",
+                            "reason": "local_sd_unavailable_user_consented_openai",
+                        }
+                    )
+                    print("Using OpenAI Images fallback provider.")
+                else:
+                    print("OpenAI fallback not enabled because consent was not granted.")
             else:
                 if args.fallback_provider == "openai":
                     print("OpenAI fallback provider is selected, but API key is missing.")
@@ -823,7 +944,16 @@ def main() -> None:
             if use_openai_fallback
             else "placeholder"
         ),
-            "provider_transitions": provider_transitions,
+        "provider_transitions": provider_transitions,
+        "generation_settings": {
+            "image_width": args.image_width,
+            "image_height": args.image_height,
+            "steps": args.steps,
+            "cfg_scale": args.cfg_scale,
+            "sampler": args.sampler,
+            "seed": args.seed,
+            "keep_consistent_look": getattr(args, "keep_consistent_look", True),
+        },
         "style": chosen_style.__dict__,
         "scenes": [],
     }
@@ -833,7 +963,8 @@ def main() -> None:
         prompt = build_scene_prompt(chosen_style, scene)
 
         if use_generator:
-            seed = args.seed + index
+            keep_consistent_look = getattr(args, "keep_consistent_look", True)
+            seed = (args.seed + index) if keep_consistent_look else -1
             image = client.txt2img(
                 prompt=prompt,
                 negative_prompt=negative_prompt,
@@ -869,6 +1000,8 @@ def main() -> None:
     cover_path = images_dir / "cover.png"
 
     if use_generator:
+        keep_consistent_look = getattr(args, "keep_consistent_look", True)
+        cover_seed = (args.seed + 999) if keep_consistent_look else -1
         cover_img = client.txt2img(
             prompt=cover_prompt,
             negative_prompt=negative_prompt,
@@ -876,7 +1009,7 @@ def main() -> None:
             height=args.image_height,
             steps=max(args.steps, 40),
             cfg_scale=args.cfg_scale,
-            seed=args.seed + 999,
+            seed=cover_seed,
             sampler_name=args.sampler,
         )
         cover_img.save(cover_path)
