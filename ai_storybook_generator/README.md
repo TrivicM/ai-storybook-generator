@@ -1,230 +1,119 @@
-# AI Storybook Generator
+# 📖 AI Storybook Generator
 
-Generate an illustrated, print-ready children book PDF from a plain text file.
+![Python 3.10](https://img.shields.io/badge/python-3.10-blue.svg)
+![Stable Diffusion](https://img.shields.io/badge/AI-Stable%20Diffusion-orange.svg)
+![ReportLab](https://img.shields.io/badge/PDF-ReportLab-red.svg)
 
-This project is a local-first publishing pipeline that combines text processing, image generation, and PDF composition into one script.
+**AI Storybook Generator** is an automated pipeline that transforms a plain text story or poem into a beautifully illustrated, print-ready children's book PDF. 
 
-## Overview
+This project was developed as a portfolio showcase demonstrating the integration of local AI image generation models with document automation in Python.
 
-AI Storybook Generator takes a story, song, or poem and produces:
+---
 
-- A cover image
-- One or more scene illustrations
-- A print-ready PDF book
-- A JSON prompt log for reproducibility
+## ✨ Features
 
-The default generation strategy is:
+- **End-to-End Pipeline**: From a raw `.txt` file to a final `.pdf` without manual layout.
+- **Smart Scene Extraction**: Automatically breaks down text into logical scenes for illustration.
+- **Action-Driven Prompts**: Dynamically structures image generation prompts so that Stable Diffusion accurately captures the *action* of each scene.
+- **Consistent Characters**: Uses tailored prompts and seed management to keep the main character visually consistent across pages.
+- **Dynamic Layout Options**: Choose to place text beneath the illustration or use a split-page layout for longer texts (auto-detect available to prevent text/image overlap).
+- **Local-First AI Integration**: Leverages [AUTOMATIC1111's stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui) for completely free, private, and local image generation.
+- **Smart Fallback System**: Seamlessly switches to OpenAI API (with privacy consent) or generates placeholder images if the user doesn't have a local Stable Diffusion server installed.
 
-1. Local Stable Diffusion via Automatic1111 API
-2. OpenAI Images API fallback (optional)
-3. Local placeholder illustrations
-
-## Feature Highlights
-
-- Story mode and song/poem mode
-- Scene extraction from paragraphs, lines, or sentences
-- Style presets for consistent character rendering
-- Cover generation and per-scene page layout
-- Song/poem text rendering across dedicated text pages
-- Prompt logging for auditability and repeatability
-
-## Architecture
-
-Core flow:
+## 🛠️ Architecture & Workflow
 
 ```mermaid
 flowchart TD
-    A[Input TXT] --> B[Metadata and Mode Selection]
-    B --> C[Scene Extraction]
-    C --> D[Image Generation]
-    D --> E[PDF Composition]
-    E --> F[Book PDF + Prompt Log]
+    A[Input TXT] --> B[Metadata & Layout Selection]
+    B --> C[Scene Parsing]
+    C --> D{Image Provider}
+    D -->|Primary| E[Local Stable Diffusion<br/>AUTOMATIC1111]
+    D -->|Fallback| F[OpenAI API]
+    D -->|Missing/Offline| G[Placeholder Generator]
+    E --> H[Image Assets]
+    F --> H
+    G --> H
+    H --> I[ReportLab PDF Composition]
+    I --> J[Print-Ready Book PDF<br/>+ JSON Prompt Log]
 ```
 
-Main responsibilities in book_maker.py:
+## 🚀 Prerequisites
 
-- CLI and interactive prompts
-- Scene parsing and mode-specific behavior
-- Image generation clients and fallback routing
-- Cover and page rendering with ReportLab
-- Output asset and metadata persistence
+- **Python 3.10.x**
+- [**stable-diffusion-webui**](https://github.com/AUTOMATIC1111/stable-diffusion-webui) by AUTOMATIC1111 (for local generation)
+- *Optional:* OpenAI API Key for cloud fallback
 
-## Requirements
+## 📦 Installation
 
-- Windows, macOS, or Linux
-- Python 3.10.x recommended
-- Pip
-- Optional local backend: Automatic1111 Stable Diffusion WebUI with API enabled
-- Optional fallback backend: OpenAI API key
+1. **Clone this repository:**
+   ```bash
+   git clone https://github.com/your-username/ai_storybook_generator.git
+   cd ai_storybook_generator
+   ```
 
-Note: Project uses Python 3.10 due to compatibility constraints with PyTorch and Stable Diffusion WebUI.
+2. **Create a virtual environment & install dependencies:**
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   pip install -r requirements.txt
+   ```
 
-Python packages are listed in requirements.txt:
+## ⚙️ Configuration
 
-- requests
-- Pillow
-- reportlab
+### 1. Local Stable Diffusion (Recommended)
+This tool relies on the popular [AUTOMATIC1111 stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui) repository for image generation. To enable it:
+1. Run your WebUI with the `--api` flag enabled:
+   ```bash
+   webui-user.bat --api
+   ```
+2. The script connects to `http://127.0.0.1:7860` by default.
 
-## Installation
-
-1. Clone repository.
-2. Create and activate a virtual environment.
-3. Install dependencies.
-
-Windows PowerShell:
-
+### 2. OpenAI Fallback (Optional)
+If you prefer cloud generation or your local GPU is busy, set your API key:
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+$env:OPENAI_API_KEY="your-api-key-here"
 ```
 
-## Configure Image Backends
+## 📚 Usage
 
-### Local Stable Diffusion (Primary)
-
-Run Automatic1111 WebUI with API enabled, commonly with:
-
-```bash
-webui-user.bat --api
-```
-
-Default API URL expected by this project:
-
-- http://127.0.0.1:7860
-
-You can change it with:
-
-- --sd-base-url
-
-### OpenAI Images (Optional Fallback)
-
-Set API key in environment:
-
-Windows PowerShell:
-
-```powershell
-$env:OPENAI_API_KEY="your_key_here"
-```
-
-## Quick Start
-
-Run with a text input file:
+Run the script and follow the interactive prompts:
 
 ```bash
 python book_maker.py --input-file sample_input/sample_story.txt
 ```
 
-The script then asks for title, author, age group, main character, content type, style, and confirmation of extracted scenes.
+You will be asked to:
+1. Provide the book title, author, and main character details.
+2. Select an illustration style (e.g., Watercolor, Dreamy, Modern).
+3. Choose the page layout (Text below image vs. Separate pages).
+4. Review extracted scenes and generation parameters.
 
-## Usage Patterns
+### CLI Arguments
+- `--book-format`: Choose `a4`, `a5`, or `square`.
+- `--fallback-provider`: `auto`, `openai`, or `placeholder`.
+- `--placeholders`: Skip AI generation and generate dummy images for fast layout testing.
+- `--allow-placeholder-fallback`: Automatically use placeholders if the SD API is unreachable.
 
-Auto fallback chain (local SD -> OpenAI -> placeholder):
+## 📁 Output
 
-```bash
-python book_maker.py --input-file sample_input/sample_story.txt --fallback-provider auto
-```
+The generated files are saved in the `output/` directory:
+- `images/` - Individual scene illustrations and cover art.
+- `<title>_print_ready.pdf` - The final book.
+- `<title>_generation_prompts.json` - A detailed log of settings and prompts used, enabling exact reproduction.
 
-Force OpenAI fallback mode:
+## 🤝 Acknowledgments
 
-```bash
-python book_maker.py --input-file sample_input/sample_story.txt --fallback-provider openai
-```
+Special thanks to the open-source AI community and [AUTOMATIC1111](https://github.com/AUTOMATIC1111) for providing the accessible and powerful `stable-diffusion-webui` which serves as the core creative engine for this tool.
 
-Allow placeholder fallback without interruption:
+---
 
-```bash
-python book_maker.py --input-file sample_input/sample_story.txt --allow-placeholder-fallback
-```
+## 📸 Preview
 
-Generate placeholders only:
+*Here are examples of the book layout generated with Stable Diffusion:*
 
-```bash
-python book_maker.py --input-file sample_input/sample_story.txt --placeholders
-```
-
-## CLI Options
-
-Common options:
-
-- --input-file: path to UTF-8 .txt source file
-- --book-format: a4, a5, square
-- --output-dir: output directory (default: output)
-- --max-scenes: scene/page cap
-- --sd-base-url: local Automatic1111 API URL
-- --image-width, --image-height: generation dimensions
-- --steps, --cfg-scale, --sampler, --seed: generation controls
-- --fallback-provider: placeholder, openai, auto
-- --openai-api-key: OpenAI key override
-- --openai-image-model: OpenAI image model name
-- --allow-placeholder-fallback: non-blocking fallback when local SD is unavailable
-
-## Output Structure
-
-Default output directory:
-
-- output/images/scene_XX.png
-- output/images/cover.png
-- output/<title>_print_ready.pdf
-- output/<title>_generation_prompts.json
-
-## Data Privacy and Handling
-
-- Local Stable Diffusion mode keeps story text and prompts on your machine.
-- OpenAI fallback mode sends prompts to OpenAI for image generation.
-- Prompt logs are stored locally in JSON for traceability.
-
-## External Services and Attribution
-
-This project integrates with third-party tools and APIs:
-
-- Automatic1111 Stable Diffusion WebUI API (primary local image backend)
-- OpenAI Images API (optional fallback backend)
-
-Project boundaries:
-
-- This repository provides orchestration, prompt construction, scene logic, and PDF rendering.
-- Generation quality and behavior depend on selected model/backend.
-- This project is not affiliated with or endorsed by Automatic1111 or OpenAI.
-
-## Reproducibility Notes
-
-- Use a pinned Python 3.10.x environment for stable local setup.
-- Keep the same seed and generation settings when comparing runs.
-- Store generated prompt logs with output assets.
-
-## Troubleshooting
-
-Local SD API unavailable:
-
-- Confirm Automatic1111 is running with API enabled.
-- Check API URL and port with --sd-base-url.
-- Use --allow-placeholder-fallback if you want generation to continue.
-
-OpenAI fallback not used:
-
-- Ensure OPENAI_API_KEY is set or pass --openai-api-key.
-- Confirm --fallback-provider is openai or auto.
-
-Blank or missing output pages:
-
-- Verify source text file is valid UTF-8 and not empty.
-- Check generated images in output/images before PDF stage.
-
-## Roadmap
-
-- Modularize the single-file script into focused packages
-- Add automated tests for extraction and page layout
-- Add localization support for prompt language
-- Improve cross-page character consistency
-- Add optional desktop or web UI
-
-## Preview
-
-Cover example:
-
+**Cover Art**
 ![Cover](sample_output/cover_preview.png)
 
-Interior page example:
-
-![Page](sample_output/page_preview.png)
+**Interior Layout (Scene 1 & 2)**
+![Page 1](sample_output/page1_preview.png)
+![Page 2](sample_output/page2_preview.png)
