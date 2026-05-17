@@ -480,10 +480,10 @@ def create_placeholder_image(path: Path, title: str, scene_text: str, width: int
 
 def build_scene_prompt(style: CharacterSuggestion, scene_text: str) -> str:
     return (
+        f"Scene action: {scene_text}, "
         "children book illustration, one clear scene, "
         f"{style.prompt_fragment}, "
-        "keep exact same main character design as previous pages, "
-        f"scene description: {scene_text}, "
+        "main character design consistent with previous pages, "
         "high detail, print quality, no text on image"
     )
 
@@ -549,6 +549,11 @@ def fit_cover_image(
     draw_x = box_x + (box_w - draw_w) / 2
     draw_y = box_y + (box_h - draw_h) / 2
 
+    c.saveState()
+    path = c.beginPath()
+    path.rect(box_x, box_y, box_w, box_h)
+    c.clipPath(path, stroke=0, fill=0)
+
     c.drawImage(
         img_reader,
         draw_x,
@@ -558,6 +563,7 @@ def fit_cover_image(
         preserveAspectRatio=True,
         mask="auto",
     )
+    c.restoreState()
 
 
 def wrap_lines(text: str, font_name: str, font_size: int, max_width: float) -> List[str]:
@@ -679,6 +685,7 @@ def render_pdf(
     page_size: Tuple[float, float],
     include_full_text_page: bool,
     include_scene_text: bool,
+    layout_mode: str = "1",
 ) -> None:
     c = canvas.Canvas(str(pdf_path), pagesize=page_size)
     page_w, page_h = page_size
@@ -697,32 +704,63 @@ def render_pdf(
 
     total_story_pages = len(scenes)
     for idx, (scene_text, scene_image) in enumerate(zip(scenes, scene_images), start=1):
-        image_box_x = margin
-        image_box_y = page_h * 0.34
-        image_box_w = page_w - 2 * margin
-        image_box_h = page_h * 0.62
-
-        c.setFillColorRGB(1, 1, 1)
-        c.rect(0, 0, page_w, page_h, fill=1, stroke=0)
-        fit_cover_image(c, scene_image, image_box_x, image_box_y, image_box_w, image_box_h)
-
-        if include_scene_text:
-            c.setFillColorRGB(0.12, 0.12, 0.12)
-            c.setFont(pdf_style.font_name, pdf_style.body_size)
+        current_layout = layout_mode
+        if current_layout == "3":
             lines = wrap_lines(scene_text, pdf_style.font_name, pdf_style.body_size, page_w - 2 * margin)
-            text_y = page_h * 0.28
-            max_lines = 6
-            for line in lines[:max_lines]:
-                c.drawString(margin, text_y, line)
-                text_y -= (pdf_style.body_size + pdf_style.line_gap)
+            current_layout = "2" if len(lines) > 5 else "1"
 
-        c.setFont(pdf_style.font_name, 11)
-        c.drawRightString(page_w - margin, 22, f"{idx}/{total_story_pages}")
-        c.showPage()
+        if current_layout == "2":
+            # Text Page
+            c.setFillColorRGB(1, 1, 1)
+            c.rect(0, 0, page_w, page_h, fill=1, stroke=0)
+            if include_scene_text:
+                c.setFillColorRGB(0.12, 0.12, 0.12)
+                c.setFont(pdf_style.font_name, pdf_style.body_size)
+                lines = wrap_lines(scene_text, pdf_style.font_name, pdf_style.body_size, page_w - 2 * margin)
+                total_text_h = len(lines) * (pdf_style.body_size + pdf_style.line_gap)
+                text_y = (page_h + total_text_h) / 2
+                for line in lines:
+                    c.drawCentredString(page_w / 2, text_y, line)
+                    text_y -= (pdf_style.body_size + pdf_style.line_gap)
+            c.showPage()
+            
+            # Illustration Page
+            c.setFillColorRGB(1, 1, 1)
+            c.rect(0, 0, page_w, page_h, fill=1, stroke=0)
+            fit_cover_image(c, scene_image, 0, 0, page_w, page_h)
+            c.setFillColorRGB(0, 0, 0)
+            c.setFont(pdf_style.font_name, 11)
+            c.drawRightString(page_w - margin, 22, f"{idx}/{total_story_pages}")
+            c.showPage()
+            
+        else:
+            # Layout 1: Image top, text bottom
+            image_box_x = margin
+            image_box_y = page_h * 0.34
+            image_box_w = page_w - 2 * margin
+            image_box_h = page_h * 0.62
+
+            c.setFillColorRGB(1, 1, 1)
+            c.rect(0, 0, page_w, page_h, fill=1, stroke=0)
+            fit_cover_image(c, scene_image, image_box_x, image_box_y, image_box_w, image_box_h)
+
+            if include_scene_text:
+                c.setFillColorRGB(0.12, 0.12, 0.12)
+                c.setFont(pdf_style.font_name, pdf_style.body_size)
+                lines = wrap_lines(scene_text, pdf_style.font_name, pdf_style.body_size, page_w - 2 * margin)
+                text_y = page_h * 0.28
+                max_lines = 6
+                for line in lines[:max_lines]:
+                    c.drawString(margin, text_y, line)
+                    text_y -= (pdf_style.body_size + pdf_style.line_gap)
+
+            c.setFont(pdf_style.font_name, 11)
+            c.drawRightString(page_w - margin, 22, f"{idx}/{total_story_pages}")
+            c.showPage()
 
     c.save()
 
-
+ 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate a local print-ready children book PDF.")
     parser.add_argument("--input-file", type=str, default="", help="Path to UTF-8 story text file.")
@@ -735,7 +773,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-dir", type=str, default="output", help="Directory for assets and PDF.")
     parser.add_argument("--max-scenes", type=int, default=14, help="Maximum number of story scenes/pages.")
-    parser.add_argument("--sd-base-url", type=str, default="http://127.0.0.1:7861", help="Local SD API URL.")
+    parser.add_argument("--sd-base-url", type=str, default="http://127.0.0.1:7860", help="Local SD API URL.")
     parser.add_argument(
         "--timeout",
         type=int,
@@ -810,6 +848,16 @@ def main() -> None:
         if song_illustration_mode not in {"one", "multiple"}:
             print("Invalid choice. Using 'one'.")
             song_illustration_mode = "one"
+
+    layout_mode = "1"
+    if content_type == "story":
+        print("\nPage layout:")
+        print("1. Text below illustration (best for short sentences)")
+        print("2. Text on left page, full illustration on right page (best for long text)")
+        print("3. Auto (decide based on text length)")
+        layout_mode = ask("Choose layout (1/2/3)", "3").strip()
+        if layout_mode not in {"1", "2", "3"}:
+            layout_mode = "3"
 
     chosen_format = choose_book_format(args.book_format)
 
@@ -1049,6 +1097,7 @@ def main() -> None:
         page_size=chosen_format.page_size,
         include_full_text_page=(content_type == "song"),
         include_scene_text=(content_type == "story"),
+        layout_mode=layout_mode,
     )
 
     prompts_path = output_dir / f"{slugify(title)}_generation_prompts.json"
