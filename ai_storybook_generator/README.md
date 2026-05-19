@@ -114,6 +114,5 @@ Special thanks to the open-source AI community and [AUTOMATIC1111](https://githu
 **Cover Art**
 ![Cover](sample_output/cover_preview.png)
 
-**Interior Layout (Scene 1 & 2)**
-![Page 1](sample_output/page1_preview.png)
-![Page 2](sample_output/page2_preview.png)
+**Interior Layout**
+![Page](sample_output/page_preview.png)
