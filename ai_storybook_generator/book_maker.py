@@ -32,7 +32,8 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
-
+from google import genai
+from google.genai import types
 
 @dataclass
 class CharacterSuggestion:
@@ -41,7 +42,6 @@ class CharacterSuggestion:
     clothing: str
     visual_style: str
     prompt_fragment: str
-
 
 @dataclass
 class PdfStyle:
@@ -122,52 +122,64 @@ class Automatic1111Client:
         return img
 
 
-class OpenAIImagesClient:
-    def __init__(self, api_key: str, timeout: int, model: str) -> None:
+class GeminiImagesClient:
+    def __init__(self, api_key: str, model: str) -> None:
         self.api_key = api_key.strip()
-        self.timeout = timeout
         self.model = model
+        self.client = genai.Client(api_key=self.api_key) if self.api_key else None
 
     def is_available(self) -> bool:
-        return bool(self.api_key)
-
-    @staticmethod
-    def _size_for_request(width: int, height: int) -> str:
-        if width == height:
-            return "1024x1024"
-        if width > height:
-            return "1536x1024"
-        return "1024x1536"
+        return self.client is not None
 
     def txt2img(self, prompt: str, width: int, height: int) -> Image.Image:
-        payload = {
-            "model": self.model,
-            "prompt": prompt,
-            "size": self._size_for_request(width, height),
-            "response_format": "b64_json",
-        }
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
+        import time
+        # Map width/height to closest aspect ratio supported by Imagen 3/4:
+        # "1:1", "3:4", "4:3", "9:16", "16:9"
+        aspect_ratio = "1:1"
+        if width == height:
+            aspect_ratio = "1:1"
+        elif width > height:
+            if abs((width / height) - (4 / 3)) < abs((width / height) - (16 / 9)):
+                aspect_ratio = "4:3"
+            else:
+                aspect_ratio = "16:9"
+        else:
+            if abs((height / width) - (4 / 3)) < abs((height / width) - (16 / 9)):
+                aspect_ratio = "3:4"
+            else:
+                aspect_ratio = "9:16"
 
-        resp = requests.post(
-            "https://api.openai.com/v1/images/generations",
-            json=payload,
-            headers=headers,
-            timeout=self.timeout,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        b64_data = data.get("data", [{}])[0].get("b64_json")
-        if not b64_data:
-            raise RuntimeError("OpenAI image generation returned no image data.")
+        max_retries = 3
+        last_exception = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                result = self.client.models.generate_images(
+                    model=self.model,
+                    prompt=prompt,
+                    config=types.GenerateImagesConfig(
+                        number_of_images=1,
+                        output_mime_type="image/png",
+                        aspect_ratio=aspect_ratio,
+                    )
+                )
+                if result.generated_images:
+                    generated_image = result.generated_images[0]
+                    image = Image.open(io.BytesIO(generated_image.image.image_bytes)).convert("RGB")
+                    if image.size != (width, height):
+                        image = image.resize((width, height), Image.Resampling.LANCZOS)
+                    return image
+                else:
+                    print(f"\n  [Warning] Attempt {attempt}/{max_retries}: Image generation returned no images (possible transient error).")
+            except Exception as e:
+                last_exception = e
+                print(f"\n  [Warning] Attempt {attempt}/{max_retries} failed with error: {e}")
+            
+            if attempt < max_retries:
+                time.sleep(2 * attempt)
 
-        raw = base64.b64decode(b64_data)
-        image = Image.open(io.BytesIO(raw)).convert("RGB")
-        if image.size != (width, height):
-            image = image.resize((width, height), Image.Resampling.LANCZOS)
-        return image
+        if last_exception:
+            raise last_exception
+        raise RuntimeError("Google GenAI image generation returned no images after retries.")
 
 
 def ask(prompt: str, default: str | None = None) -> str:
@@ -268,12 +280,12 @@ def ask_generation_settings(args: argparse.Namespace) -> None:
     print(f"- Seed: {args.seed if args.keep_consistent_look else 'random each page'}")
 
 
-def ask_openai_fallback_consent() -> bool:
-    print("\nPrivacy notice: OpenAI fallback sends prompts to OpenAI Images API.")
+def ask_gemini_fallback_consent() -> bool:
+    print("\nPrivacy notice: Gemini fallback sends prompts to Google Gemini API.")
     print(
         "This may include scene text and a short story summary used for the cover illustration prompt."
     )
-    answer = ask("Allow OpenAI fallback for image generation? (y/n)", "n").strip().lower()
+    answer = ask("Allow Gemini fallback for image generation? (y/n)", "n").strip().lower()
     return answer in {"y", "yes"}
 
 
@@ -792,20 +804,20 @@ def parse_args() -> argparse.Namespace:
         "--fallback-provider",
         type=str,
         default="auto",
-        choices=["placeholder", "openai", "auto"],
+        choices=["placeholder", "gemini", "auto"],
         help="Fallback provider when local SD API is unavailable.",
     )
     parser.add_argument(
-        "--openai-api-key",
+        "--gemini-api-key",
         type=str,
         default="",
-        help="OpenAI API key for fallback image generation (or set OPENAI_API_KEY env var).",
+        help="Gemini API key for fallback image generation (or set GEMINI_API_KEY / GENAI_API_KEY env var).",
     )
     parser.add_argument(
-        "--openai-image-model",
+        "--gemini-image-model",
         type=str,
-        default="gpt-image-1",
-        help="OpenAI image model for fallback provider.",
+        default="imagen-4.0-generate-001",
+        help="Gemini image model for fallback provider.",
     )
     parser.add_argument(
         "--allow-placeholder-fallback",
@@ -883,13 +895,12 @@ def main() -> None:
     ask_generation_settings(args)
 
     client = Automatic1111Client(args.sd_base_url, args.timeout)
-    openai_client = OpenAIImagesClient(
-        api_key=args.openai_api_key or os.getenv("OPENAI_API_KEY", ""),
-        timeout=args.timeout,
-        model=args.openai_image_model,
+    gemini_client = GeminiImagesClient(
+        api_key=args.gemini_api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GENAI_API_KEY") or "",
+        model=args.gemini_image_model,
     )
     use_generator = (not args.placeholders) and client.is_available()
-    use_openai_fallback = False
+    use_gemini_fallback = False
     provider_transitions: List[dict] = []
 
     if args.placeholders:
@@ -907,47 +918,47 @@ def main() -> None:
             f"({args.sd_base_url})."
         )
 
-        if args.fallback_provider in {"openai", "auto"}:
-            if openai_client.is_available():
-                if ask_openai_fallback_consent():
-                    use_openai_fallback = True
+        if args.fallback_provider in {"gemini", "auto"}:
+            if gemini_client.is_available():
+                if ask_gemini_fallback_consent():
+                    use_gemini_fallback = True
                     provider_transitions.append(
                         {
                             "from": "local_stable_diffusion",
-                            "to": "openai_fallback",
-                            "reason": "local_sd_unavailable_user_consented_openai",
+                            "to": "gemini_fallback",
+                            "reason": "local_sd_unavailable_user_consented_gemini",
                         }
                     )
-                    print("Using OpenAI Images fallback provider.")
+                    print("Using Gemini Images fallback provider.")
                 else:
-                    print("OpenAI fallback not enabled because consent was not granted.")
+                    print("Gemini fallback not enabled because consent was not granted.")
             else:
-                if args.fallback_provider == "openai":
-                    print("OpenAI fallback provider is selected, but API key is missing.")
+                if args.fallback_provider == "gemini":
+                    print("Gemini fallback provider is selected, but API key is missing.")
                     fallback_answer = ask("Continue with placeholder illustrations? (y/n)", "y").lower()
                     if fallback_answer not in {"y", "yes"}:
                         raise SystemExit(
-                            "OpenAI fallback requires OPENAI_API_KEY or --openai-api-key."
+                            "Gemini fallback requires GEMINI_API_KEY, GENAI_API_KEY or --gemini-api-key."
                         )
                     provider_transitions.append(
                         {
                             "from": "local_stable_diffusion",
                             "to": "placeholder",
-                            "reason": "openai_key_missing_user_confirmed_placeholder",
+                            "reason": "gemini_key_missing_user_confirmed_placeholder",
                         }
                     )
-                    print("Using placeholder images because OpenAI API key is not configured.")
+                    print("Using placeholder images because Gemini API key is not configured.")
                 else:
                     provider_transitions.append(
                         {
                             "from": "local_stable_diffusion",
                             "to": "placeholder",
-                            "reason": "local_sd_unavailable_openai_key_missing",
+                            "reason": "local_sd_unavailable_gemini_key_missing",
                         }
                     )
-                    print("OpenAI API key is not configured. Auto mode will continue with placeholders.")
+                    print("Gemini API key is not configured. Auto mode will continue with placeholders.")
 
-        if not use_openai_fallback:
+        if not use_gemini_fallback:
             fallback_reason = "--allow-placeholder-fallback is enabled"
             if not args.allow_placeholder_fallback:
                 fallback_answer = ask("Continue with placeholder illustrations? (y/n)", "y").lower()
@@ -988,8 +999,8 @@ def main() -> None:
         "image_provider": (
             "local_stable_diffusion"
             if use_generator
-            else "openai_fallback"
-            if use_openai_fallback
+            else "gemini_fallback"
+            if use_gemini_fallback
             else "placeholder"
         ),
         "provider_transitions": provider_transitions,
@@ -1024,13 +1035,24 @@ def main() -> None:
                 sampler_name=args.sampler,
             )
             image.save(image_path)
-        elif use_openai_fallback:
-            image = openai_client.txt2img(
-                prompt=prompt,
-                width=args.image_width,
-                height=args.image_height,
-            )
-            image.save(image_path)
+        elif use_gemini_fallback:
+            try:
+                image = gemini_client.txt2img(
+                    prompt=prompt,
+                    width=args.image_width,
+                    height=args.image_height,
+                )
+                image.save(image_path)
+            except Exception as e:
+                print(f"\n[WARNING] Failed to generate image for Scene {index} due to error: {e}")
+                print("Falling back to placeholder image for this scene to continue book generation.")
+                create_placeholder_image(
+                    path=image_path,
+                    title=f"Scene {index}",
+                    scene_text="",
+                    width=args.image_width,
+                    height=args.image_height,
+                )
         else:
             create_placeholder_image(
                 path=image_path,
@@ -1061,13 +1083,24 @@ def main() -> None:
             sampler_name=args.sampler,
         )
         cover_img.save(cover_path)
-    elif use_openai_fallback:
-        cover_img = openai_client.txt2img(
-            prompt=cover_prompt,
-            width=args.image_width,
-            height=args.image_height,
-        )
-        cover_img.save(cover_path)
+    elif use_gemini_fallback:
+        try:
+            cover_img = gemini_client.txt2img(
+                prompt=cover_prompt,
+                width=args.image_width,
+                height=args.image_height,
+            )
+            cover_img.save(cover_path)
+        except Exception as e:
+            print(f"\n[WARNING] Failed to generate cover image due to error: {e}")
+            print("Falling back to placeholder image for the cover.")
+            create_placeholder_image(
+                path=cover_path,
+                title=title,
+                scene_text="",
+                width=args.image_width,
+                height=args.image_height,
+            )
     else:
         create_placeholder_image(
             path=cover_path,
