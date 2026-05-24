@@ -20,6 +20,7 @@ import io
 import json
 import os
 import re
+import sys
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
@@ -184,7 +185,8 @@ class GeminiImagesClient:
 
 def ask(prompt: str, default: str | None = None) -> str:
     suffix = f" [{default}]" if default else ""
-    value = input(f"{prompt}{suffix}: ").strip()
+    print(f"{prompt}{suffix}: ", end="", flush=True)
+    value = input().strip()
     if not value and default is not None:
         return default
     return value
@@ -218,7 +220,6 @@ def ask_float(prompt: str, default: float, min_value: float, max_value: float) -
             print(f"Please enter a value between {min_value} and {max_value}.")
             continue
         return value
-
 
 def ask_generation_settings(args: argparse.Namespace) -> None:
     print("\nImage generation setup:")
@@ -376,8 +377,8 @@ def extract_scenes(text: str, max_scenes: int) -> List[str]:
     return deduped
 
 
-def build_suggestions(main_name: str, main_type: str) -> List[CharacterSuggestion]:
-    base = f"main character is {main_name}, a {main_type}, friendly, readable silhouette"
+def build_suggestions(main_name: str, main_type: str, main_description: str) -> List[CharacterSuggestion]:
+    base = f"main character is {main_name}, a {main_type} (described as: {main_description}), friendly, readable silhouette"
 
     return [
         CharacterSuggestion(
@@ -509,6 +510,15 @@ def build_cover_prompt(style: CharacterSuggestion, story_text: str, title: str) 
         f"inspired by this story: {short_story}, "
         f"book title concept: {title}, "
         "space for title text at top, print quality, no watermark"
+    )
+
+
+def build_character_design_prompt(style: CharacterSuggestion) -> str:
+    return (
+        f"Portrait character reference sheet of the main character, "
+        "children book illustration style, solid light background, "
+        f"{style.prompt_fragment}, "
+        "centered character design reference, full body visible, high detail, print quality, no text on image"
     )
 
 
@@ -698,6 +708,10 @@ def render_pdf(
     include_full_text_page: bool,
     include_scene_text: bool,
     layout_mode: str = "1",
+    no_cover_title: bool = False,
+    cover_author_font: str | None = None,
+    cover_author_y: float = 145.0,
+    cover_author_size: int | None = None,
 ) -> None:
     c = canvas.Canvas(str(pdf_path), pagesize=page_size)
     page_w, page_h = page_size
@@ -705,10 +719,27 @@ def render_pdf(
 
     fit_cover_image(c, cover_image, 0, 0, page_w, page_h)
     c.setFillColorRGB(1, 1, 1)
-    c.setFont(pdf_style.font_name, pdf_style.title_size)
-    c.drawCentredString(page_w / 2, page_h - 110, title)
-    c.setFont(pdf_style.font_name, max(14, pdf_style.body_size - 2))
-    c.drawCentredString(page_w / 2, page_h - 145, f"by {author}")
+    
+    if not no_cover_title:
+        c.setFont(pdf_style.font_name, pdf_style.title_size)
+        c.drawCentredString(page_w / 2, page_h - 110, title)
+        
+    author_font = pdf_style.font_name
+    author_size = cover_author_size if cover_author_size is not None else max(14, pdf_style.body_size - 2)
+    
+    if cover_author_font:
+        try:
+            if os.path.exists(cover_author_font):
+                font_key = "CustomCoverAuthorFont"
+                pdfmetrics.registerFont(TTFont(font_key, cover_author_font))
+                author_font = font_key
+            else:
+                author_font = cover_author_font
+        except Exception as e:
+            print(f"Warning: Could not register custom cover author font {cover_author_font}: {e}")
+
+    c.setFont(author_font, author_size)
+    c.drawCentredString(page_w / 2, page_h - cover_author_y, f"by {author}")
     c.showPage()
 
     if include_full_text_page:
@@ -799,6 +830,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sampler", type=str, default="DPM++ 2M Karras", help="Sampler name.")
     parser.add_argument("--seed", type=int, default=12345, help="Base seed for consistent character look.")
     parser.add_argument("--font-path", type=str, default="", help="Optional TTF path for custom text font.")
+    parser.add_argument(
+        "--no-cover-title",
+        action="store_true",
+        help="Skip drawing the book title on the cover page.",
+    )
+    parser.add_argument(
+        "--cover-author-font",
+        type=str,
+        default="",
+        help="Optional TTF path or name for the cover author font.",
+    )
+    parser.add_argument(
+        "--cover-author-y",
+        type=float,
+        default=145.0,
+        help="Vertical distance from the top of the cover page to draw the author name.",
+    )
+    parser.add_argument(
+        "--cover-author-size",
+        type=int,
+        default=None,
+        help="Optional font size for the cover author name.",
+    )
     parser.add_argument("--placeholders", action="store_true", help="Skip AI generation and use placeholders.")
     parser.add_argument(
         "--fallback-provider",
@@ -828,6 +882,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    # Ensure stdout is line-buffered/flushed immediately in non-interactive terminals or IDE runners
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, io.UnsupportedOperation):
+        pass
+
     args = parse_args()
 
     output_dir = Path(args.output_dir)
@@ -846,6 +906,7 @@ def main() -> None:
     age_group = ask("Age group (3-5 / 6-8 / 9-12)", "6-8")
     main_name = ask("Main character name", "Mila")
     main_type = ask("Main character type (girl, boy, animal, creature)", "girl")
+    main_description = ask("Detailed character description", "little silver dragon with shiny round sapphire-blue eyes, two tiny gold horns, a red velvet backpack, and small translucent wings")
     content_type = ask("Is this a story or a song/poem? (story/song)", "story").strip().lower()
     if content_type not in {"story", "song"}:
         print("Invalid choice. Using 'story'.")
@@ -873,7 +934,7 @@ def main() -> None:
 
     chosen_format = choose_book_format(args.book_format)
 
-    suggestions = build_suggestions(main_name, main_type)
+    suggestions = build_suggestions(main_name, main_type, main_description)
     chosen_style = select_suggestion(suggestions)
 
     scenes = extract_scenes(story_text, args.max_scenes)
@@ -989,6 +1050,85 @@ def main() -> None:
         "blurry, watermark, logo, signature, text, extra limbs, deformed face, "
         "bad anatomy, low quality"
     )
+
+    # Character Design Approval Phase
+    if use_generator or use_gemini_fallback:
+        print("\n=== Character Design Approval Phase ===")
+        while True:
+            preview_path = images_dir / "character_design_preview.png"
+            preview_prompt = build_character_design_prompt(chosen_style)
+            
+            print(f"\nGenerating character design preview with style: '{chosen_style.name}'")
+            print(f"Character description: '{main_description}'")
+            
+            if use_generator:
+                print(f"Generating preview with seed {args.seed}...")
+                try:
+                    preview_img = client.txt2img(
+                        prompt=preview_prompt,
+                        negative_prompt=negative_prompt,
+                        width=args.image_width,
+                        height=args.image_height,
+                        steps=args.steps,
+                        cfg_scale=args.cfg_scale,
+                        seed=args.seed,
+                        sampler_name=args.sampler,
+                    )
+                    preview_img.save(preview_path)
+                    print(f"Character design preview saved to {preview_path}")
+                except Exception as e:
+                    print(f"Error generating character preview via Stable Diffusion: {e}")
+            elif use_gemini_fallback:
+                print("Generating preview with Gemini fallback...")
+                try:
+                    preview_img = gemini_client.txt2img(
+                        prompt=preview_prompt,
+                        width=args.image_width,
+                        height=args.image_height,
+                    )
+                    preview_img.save(preview_path)
+                    print(f"Character design preview saved to {preview_path}")
+                except Exception as e:
+                    print(f"Error generating character preview via Gemini: {e}")
+            
+            satisfied = ask("\nAre you satisfied with this character design? (y/n)", "y").strip().lower()
+            if satisfied in {"y", "yes"}:
+                print("Character design approved!")
+                break
+                
+            print("\nHow would you like to adjust the design?")
+            print("1. Enter character description tweaks (appends to character description)")
+            print("2. Change character seed (currently: {})".format(args.seed))
+            print("3. Change character style (re-choose illustration style)")
+            print("4. Edit entire character description from scratch")
+            print("5. Keep current design and proceed anyway")
+            
+            choice = ask("Choose an option (1/2/3/4/5)", "5").strip()
+            if choice == "1":
+                tweak = ask("Enter description tweak (e.g. 'wearing a blue hat', 'red scales')", "").strip()
+                if tweak:
+                    main_description = f"{main_description}, {tweak}"
+                    suggestions = build_suggestions(main_name, main_type, main_description)
+                    for s in suggestions:
+                        if s.name == chosen_style.name:
+                            chosen_style = s
+                            break
+            elif choice == "2":
+                args.seed = ask_int("Enter new seed/offset (-1 for random)", args.seed + 1, -1, 2147483647)
+            elif choice == "3":
+                suggestions = build_suggestions(main_name, main_type, main_description)
+                chosen_style = select_suggestion(suggestions)
+            elif choice == "4":
+                new_desc = ask("Enter new character description", main_description).strip()
+                if new_desc:
+                    main_description = new_desc
+                    suggestions = build_suggestions(main_name, main_type, main_description)
+                    for s in suggestions:
+                        if s.name == chosen_style.name:
+                            chosen_style = s
+                            break
+            elif choice == "5":
+                break
 
     scene_image_paths: List[Path] = []
     prompt_log = {
@@ -1131,10 +1271,205 @@ def main() -> None:
         include_full_text_page=(content_type == "song"),
         include_scene_text=(content_type == "story"),
         layout_mode=layout_mode,
+        no_cover_title=args.no_cover_title,
+        cover_author_font=args.cover_author_font or None,
+        cover_author_y=args.cover_author_y,
+        cover_author_size=args.cover_author_size,
     )
 
     prompts_path = output_dir / f"{slugify(title)}_generation_prompts.json"
     prompts_path.write_text(json.dumps(prompt_log, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    while True:
+        satisfied = ask("\nAre you satisfied with the book? (y/n)", "y").strip().lower()
+        if satisfied in {"y", "yes"}:
+            break
+
+        print("\nWhat would you like to do?")
+        print("1. Re-generate specific illustration(s)")
+        print("2. Modify PDF layout / styling / cover properties")
+        print("3. Done (Exit and save changes)")
+
+        choice = ask("Choose an option (1/2/3)", "3").strip()
+        if choice == "1":
+            print("\nPage list:")
+            print("  0. Cover page")
+            for idx, scene in enumerate(scenes, start=1):
+                short = scene if len(scene) <= 80 else scene[:77] + "..."
+                print(f"  {idx}. Scene {idx}: {short}")
+
+            selection = ask("Enter the numbers of illustrations to re-generate (separated by commas, e.g. 0, 2)", "").strip()
+            if not selection:
+                continue
+
+            indices_to_regen = []
+            try:
+                for x in selection.split(","):
+                    val = int(x.strip())
+                    if 0 <= val <= len(scenes):
+                        indices_to_regen.append(val)
+            except ValueError:
+                print("Invalid input. Please enter numbers separated by commas.")
+                continue
+
+            if not indices_to_regen:
+                print("No valid page numbers selected.")
+                continue
+
+            for idx in indices_to_regen:
+                if idx == 0:
+                    print(f"\n--- Re-generating Cover Image ---")
+                    print(f"Original prompt: {cover_prompt}")
+                    tweak = ask("Enter additional instructions to append (or press Enter to keep prompt)", "").strip()
+                    active_prompt = cover_prompt
+                    if tweak:
+                        active_prompt = f"{cover_prompt}, {tweak}"
+
+                    if use_generator:
+                        keep_consistent_look = getattr(args, "keep_consistent_look", True)
+                        cover_seed = ask_int("Enter new seed/offset (-1 for random)", args.seed + 999 + 1, -1, 2147483647)
+                        print(f"Generating with seed {cover_seed}...")
+                        cover_img = client.txt2img(
+                            prompt=active_prompt,
+                            negative_prompt=negative_prompt,
+                            width=args.image_width,
+                            height=args.image_height,
+                            steps=max(args.steps, 40),
+                            cfg_scale=args.cfg_scale,
+                            seed=cover_seed,
+                            sampler_name=args.sampler,
+                        )
+                        cover_img.save(cover_path)
+                    elif use_gemini_fallback:
+                        try:
+                            print("Generating with Gemini fallback...")
+                            cover_img = gemini_client.txt2img(
+                                prompt=active_prompt,
+                                width=args.image_width,
+                                height=args.image_height,
+                            )
+                            cover_img.save(cover_path)
+                        except Exception as e:
+                            print(f"Failed to generate cover image: {e}")
+                    else:
+                        print("No image provider available.")
+                    
+                    prompt_log["cover_prompt"] = active_prompt
+                else:
+                    scene_idx = idx - 1
+                    scene_text = scenes[scene_idx]
+                    scene_image_path = scene_image_paths[scene_idx]
+                    orig_prompt = build_scene_prompt(chosen_style, scene_text)
+                    print(f"\n--- Re-generating Scene {idx} ---")
+                    print(f"Original prompt: {orig_prompt}")
+                    tweak = ask("Enter additional instructions to append (or press Enter to keep prompt)", "").strip()
+                    active_prompt = orig_prompt
+                    if tweak:
+                        active_prompt = f"{orig_prompt}, {tweak}"
+
+                    if use_generator:
+                        keep_consistent_look = getattr(args, "keep_consistent_look", True)
+                        scene_seed = ask_int("Enter new seed/offset (-1 for random)", args.seed + idx + 1, -1, 2147483647)
+                        print(f"Generating with seed {scene_seed}...")
+                        image = client.txt2img(
+                            prompt=active_prompt,
+                            negative_prompt=negative_prompt,
+                            width=args.image_width,
+                            height=args.image_height,
+                            steps=args.steps,
+                            cfg_scale=args.cfg_scale,
+                            seed=scene_seed,
+                            sampler_name=args.sampler,
+                        )
+                        image.save(scene_image_path)
+                    elif use_gemini_fallback:
+                        try:
+                            print("Generating with Gemini fallback...")
+                            image = gemini_client.txt2img(
+                                prompt=active_prompt,
+                                width=args.image_width,
+                                height=args.image_height,
+                            )
+                            image.save(scene_image_path)
+                        except Exception as e:
+                            print(f"Failed to generate image for Scene {idx}: {e}")
+                    else:
+                        print("No image provider available.")
+                    
+                    prompt_log["scenes"][scene_idx]["prompt"] = active_prompt
+
+            # Re-render PDF with the updated images
+            render_pdf(
+                pdf_path=pdf_path,
+                title=title,
+                author=author,
+                story_text=story_text,
+                scenes=scenes,
+                scene_images=scene_image_paths,
+                cover_image=cover_path,
+                pdf_style=pdf_style,
+                page_size=chosen_format.page_size,
+                include_full_text_page=(content_type == "song"),
+                include_scene_text=(content_type == "story"),
+                layout_mode=layout_mode,
+                no_cover_title=args.no_cover_title,
+                cover_author_font=args.cover_author_font or None,
+                cover_author_y=args.cover_author_y,
+                cover_author_size=args.cover_author_size,
+            )
+            prompts_path.write_text(json.dumps(prompt_log, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"\nPDF and prompts log updated successfully!")
+
+        elif choice == "2":
+            print("\nModify PDF layout / styling settings:")
+            current_no_title = args.no_cover_title
+            no_title_ans = ask(f"Skip cover title? (y/n, currently {'y' if current_no_title else 'n'})", "y" if current_no_title else "n").strip().lower()
+            args.no_cover_title = no_title_ans in {"y", "yes"}
+
+            current_author_font = args.cover_author_font or ""
+            author_font_ans = ask(f"Cover author font path (currently '{current_author_font}', press Enter to keep)", current_author_font).strip()
+            args.cover_author_font = author_font_ans
+
+            current_author_y = args.cover_author_y
+            args.cover_author_y = ask_float(f"Cover author Y position (currently {current_author_y})", current_author_y, 0.0, 1500.0)
+
+            current_author_size = args.cover_author_size
+            current_size_str = str(current_author_size) if current_author_size is not None else "default"
+            author_size_ans = ask(f"Cover author font size (currently {current_size_str}, Enter to keep)", current_size_str).strip()
+            if author_size_ans.lower() != "default" and author_size_ans.isdigit():
+                args.cover_author_size = int(author_size_ans)
+            elif author_size_ans.lower() == "default":
+                args.cover_author_size = None
+
+            current_font_path = args.font_path or ""
+            font_path_ans = ask(f"Main body font path (currently '{current_font_path}', press Enter to keep)", current_font_path).strip()
+            args.font_path = font_path_ans
+
+            font_name = ensure_font(args.font_path or None)
+            pdf_style = get_pdf_style(age_group.strip(), font_name)
+
+            render_pdf(
+                pdf_path=pdf_path,
+                title=title,
+                author=author,
+                story_text=story_text,
+                scenes=scenes,
+                scene_images=scene_image_paths,
+                cover_image=cover_path,
+                pdf_style=pdf_style,
+                page_size=chosen_format.page_size,
+                include_full_text_page=(content_type == "song"),
+                include_scene_text=(content_type == "story"),
+                layout_mode=layout_mode,
+                no_cover_title=args.no_cover_title,
+                cover_author_font=args.cover_author_font or None,
+                cover_author_y=args.cover_author_y,
+                cover_author_size=args.cover_author_size,
+            )
+            print(f"\nPDF updated with styling changes!")
+
+        elif choice == "3":
+            break
 
     print("\nDone.")
     print(f"PDF: {pdf_path}")
