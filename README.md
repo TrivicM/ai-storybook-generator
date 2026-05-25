@@ -8,6 +8,22 @@
 
 This project was developed as a portfolio showcase demonstrating the integration of local AI image generation models with document automation in Python.
 
+
+## 🎯 Product Scope & User Requirements
+
+This pipeline was designed from the perspective of a **writer/creator** who wants to self-publish a children's book but lacks illustration skills or a graphic design background. 
+
+The project satisfies the following core user requirements:
+
+| User Requirement (What the Writer Needs) | Technical Solution (How the Pipeline Solves It) |
+| :--- | :--- |
+| **Print-Ready Output** <br> Direct output of a formatted PDF book. | Integrated **ReportLab** layout engine that automatically handles margins, typography, page breaks, and image fitting. |
+| **Illustrations Per Scene** <br> A unique picture representing each logical part of the story. | Dynamic **Scene Parsing** that splits text into stanzas/scenes and generates matching images. |
+| **Data Privacy & Offline Generation** <br> The ability to generate book illustrations locally without uploading drafts to third-party cloud servers. | Local-first integration with **Stable Diffusion (AUTOMATIC1111)** and a **Placeholder Mode** for offline layout mockups. |
+| **Character Consistency** <br> The main character must look the same across all pages. | Custom prompt-chaining and **Stable Diffusion seed management** (now enhanced with local **IP-Adapter** support). |
+| **Interactive Refining** <br> The ability to review character designs and fine-tune individual pages. | An interactive **Character Approval Phase** and a **Post-Generation Review Loop** to adjust settings without starting over. |
+| **Layout Flexibility** <br> Support for different print formats and text lengths. | Configurable book formats (**A4, A5, Square**) and automatic page layout detection (text-below-image vs. separate text/image pages). |
+
 ---
 
 ## ✨ Features
