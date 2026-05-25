@@ -84,6 +84,9 @@ This tool relies on the popular [AUTOMATIC1111 stable-diffusion-webui](https://g
    ```
 2. The script connects to `http://127.0.0.1:7860` by default.
 
+> [!NOTE]
+> The sample illustrations in this project were generated using the standard Stable Diffusion 1.5 base model checkpoint (`v1-5-pruned-emaonly.safetensors`). For the best compatibility and replication of the preview style, we recommend using this checkpoint or any SD 1.5-based fine-tune (e.g., DreamShaper).
+
 ### 2. Gemini / Google GenAI Fallback (Optional)
 If you prefer cloud generation (using Google's Imagen model) or your local GPU is busy, set your API key:
 ```powershell
