@@ -4,4 +4,3 @@ output/
 download_clip.py
 ip_adapter_result.png
 test_ip_adapter.py
-requirements.txt
