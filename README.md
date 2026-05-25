@@ -113,12 +113,31 @@ Special thanks to the open-source AI community and [AUTOMATIC1111](https://githu
 
 ---
 
-## 📸 Preview
+## 📸 Previews
 
+### 1. Local Stable Diffusion (IP-Adapter Character Consistency)
 *Here are examples of the book layout generated with Stable Diffusion:*
 
-**Cover Art**
-![Cover](sample_output/cover_preview.png)
+<p align="center">
+  <img src="sample_output/cover_preview.png" alt="Cover Art" width="45%" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="sample_output/page_preview.png" alt="Interior Layout" width="45%" />
+</p>
 
-**Interior Layout**
-![Page](sample_output/page_preview.png)
+### 2. Google Gemini / Imagen Cloud Fallback
+*Here are examples of the book layout generated with Google Gemini cloud fallback:*
+
+<p align="center">
+  <img src="sample_output/gemini_cover_preview.png" alt="Gemini Cover Art" width="45%" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="sample_output/gemini_page_preview.png" alt="Gemini Interior Layout" width="45%" />
+</p>
+
+### 3. Placeholder Mode (Fast Testing / Manual Illustration Import)
+*Here are examples of the book layout using the fast, local placeholder mode:*
+
+<p align="center">
+  <img src="sample_output/placeholder_cover_preview.png" alt="Placeholder Cover Art" width="45%" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="sample_output/placeholder_page_preview.png" alt="Placeholder Interior Layout" width="45%" />
+</p>
