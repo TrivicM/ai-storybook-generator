@@ -138,25 +138,25 @@ Special thanks to the open-source AI community and [AUTOMATIC1111](https://githu
 *Here are examples of the book layout generated with Stable Diffusion:*
 
 <p align="center">
-  <img src="sample_output/cover_preview.png" alt="Cover Art" width="45%" />
+  <img src="sample_output/cover_preview.png" alt="Cover Art" height="350" />
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="sample_output/page_preview.png" alt="Interior Layout" width="45%" />
+  <img src="sample_output/page_preview.png" alt="Interior Layout" height="350" />
 </p>
 
 ### 2. Google Gemini / Imagen Cloud Fallback
 *Here are examples of the book layout generated with Google Gemini cloud fallback:*
 
 <p align="center">
-  <img src="sample_output/gemini_cover_preview.png" alt="Gemini Cover Art" width="45%" />
+  <img src="sample_output/gemini_cover_preview.png" alt="Gemini Cover Art" height="350" />
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="sample_output/gemini_page_preview.png" alt="Gemini Interior Layout" width="45%" />
+  <img src="sample_output/gemini_page_preview.png" alt="Gemini Interior Layout" height="350" />
 </p>
 
 ### 3. Placeholder Mode (Fast Testing / Manual Illustration Import)
 *Here are examples of the book layout using the fast, local placeholder mode:*
 
 <p align="center">
-  <img src="sample_output/placeholder_cover_preview.png" alt="Placeholder Cover Art" width="45%" />
+  <img src="sample_output/placeholder_cover_preview.png" alt="Placeholder Cover Art" height="350" />
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="sample_output/placeholder_page_preview.png" alt="Placeholder Interior Layout" width="45%" />
+  <img src="sample_output/placeholder_page_preview.png" alt="Placeholder Interior Layout" height="350" />
 </p>
