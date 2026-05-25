@@ -17,8 +17,8 @@ This project was developed as a portfolio showcase demonstrating the integration
 - **Action-Driven Prompts**: Dynamically structures image generation prompts so that Stable Diffusion accurately captures the *action* of each scene.
 - **Consistent Characters**: Uses tailored prompts and seed management to keep the main character visually consistent across pages.
 - **Dynamic Layout Options**: Choose to place text beneath the illustration or use a split-page layout for longer texts (auto-detect available to prevent text/image overlap).
-- **Local-First AI Integration**: Leverages [AUTOMATIC1111's stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui) for completely free, private, and local image generation.
-- **Smart Fallback System**: Seamlessly switches to OpenAI API (with privacy consent) or generates placeholder images if the user doesn't have a local Stable Diffusion server installed.
+- **Smart Fallback System**: Seamlessly switches to Google GenAI / Gemini Imagen API (with privacy consent) or generates placeholder images if the user doesn't have a local Stable Diffusion server installed.
+- **Interactive Review & Refining Loop**: Features a dedicated character design approval phase before generating the full book, and a post-generation review step to adjust layouts, edit styles, or re-render specific pages on the fly.
 
 ## 🛠️ Architecture & Workflow
 
@@ -28,7 +28,7 @@ flowchart TD
     B --> C[Scene Parsing]
     C --> D{Image Provider}
     D -->|Primary| E[Local Stable Diffusion<br/>AUTOMATIC1111]
-    D -->|Fallback| F[OpenAI API]
+    D -->|Fallback| F[Google GenAI / Gemini]
     D -->|Missing/Offline| G[Placeholder Generator]
     E --> H[Image Assets]
     F --> H
@@ -41,7 +41,7 @@ flowchart TD
 
 - **Python 3.10.x**
 - [**stable-diffusion-webui**](https://github.com/AUTOMATIC1111/stable-diffusion-webui) by AUTOMATIC1111 (for local generation)
-- *Optional:* OpenAI API Key for cloud fallback
+- *Optional:* Google Gemini API Key (`GEMINI_API_KEY` or `GENAI_API_KEY`) for cloud fallback image generation
 
 ## 📦 Installation
 
@@ -68,10 +68,12 @@ This tool relies on the popular [AUTOMATIC1111 stable-diffusion-webui](https://g
    ```
 2. The script connects to `http://127.0.0.1:7860` by default.
 
-### 2. OpenAI Fallback (Optional)
-If you prefer cloud generation or your local GPU is busy, set your API key:
+### 2. Gemini / Google GenAI Fallback (Optional)
+If you prefer cloud generation (using Google's Imagen model) or your local GPU is busy, set your API key:
 ```powershell
-$env:OPENAI_API_KEY="your-api-key-here"
+$env:GEMINI_API_KEY="your-api-key-here"
+# or
+$env:GENAI_API_KEY="your-api-key-here"
 ```
 
 ## 📚 Usage
@@ -87,10 +89,14 @@ You will be asked to:
 2. Select an illustration style (e.g., Watercolor, Dreamy, Modern).
 3. Choose the page layout (Text below image vs. Separate pages).
 4. Review extracted scenes and generation parameters.
+5. **Character Approval Phase**: Inspect the generated character sheet and choose to adjust the description, seed/style, or proceed.
+6. **PDF Review Loop**: Once generated, view the output book and selectively re-generate pages or fine-tune layout/fonts without rebuilding from scratch.
 
 ### CLI Arguments
 - `--book-format`: Choose `a4`, `a5`, or `square`.
-- `--fallback-provider`: `auto`, `openai`, or `placeholder`.
+- `--fallback-provider`: `auto`, `gemini`, or `placeholder`.
+- `--gemini-api-key`: Pass the Gemini key directly (or set `GEMINI_API_KEY` env var).
+- `--gemini-image-model`: Specify the Imagen model (defaults to `imagen-4.0-generate-001`).
 - `--placeholders`: Skip AI generation and generate dummy images for fast layout testing.
 - `--allow-placeholder-fallback`: Automatically use placeholders if the SD API is unreachable.
 
