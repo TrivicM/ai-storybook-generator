@@ -349,20 +349,31 @@ def slugify(value: str) -> str:
     return value or "book"
 
 
-def extract_scenes(text: str, max_scenes: int) -> List[str]:
-    stanzas = [x.strip() for x in re.split(r"\n\s*\n", text) if x.strip()]
-    if len(stanzas) >= 2:
-        scenes = stanzas
-    else:
-        lines = [x.strip() for x in text.splitlines() if x.strip()]
-        if len(lines) >= 4:
-            chunk_size = 2
-            scenes = [" ".join(lines[i : i + chunk_size]) for i in range(0, len(lines), chunk_size)]
+def extract_scenes(text: str, max_scenes: int, content_type: str = "story") -> List[str]:
+    if content_type == "song":
+        stanzas = [x.strip() for x in re.split(r"\n\s*\n", text) if x.strip()]
+        if len(stanzas) >= 2:
+            scenes = stanzas
         else:
-            sentences = [
-                x.strip() for x in re.split(r"(?<=[.!?])\s+", text.replace("\n", " ")) if x.strip()
-            ]
-            scenes = sentences if sentences else [text.strip()]
+            lines = [x.strip() for x in text.splitlines() if x.strip()]
+            scenes = []
+            for i in range(0, len(lines), 4):
+                chunk = lines[i : i + 4]
+                scenes.append("\n".join(chunk))
+    else:
+        stanzas = [x.strip() for x in re.split(r"\n\s*\n", text) if x.strip()]
+        if len(stanzas) >= 2:
+            scenes = stanzas
+        else:
+            lines = [x.strip() for x in text.splitlines() if x.strip()]
+            if len(lines) >= 4:
+                chunk_size = 2
+                scenes = [" ".join(lines[i : i + chunk_size]) for i in range(0, len(lines), chunk_size)]
+            else:
+                sentences = [
+                    x.strip() for x in re.split(r"(?<=[.!?])\s+", text.replace("\n", " ")) if x.strip()
+                ]
+                scenes = sentences if sentences else [text.strip()]
 
     deduped: List[str] = []
     seen = set()
@@ -559,13 +570,18 @@ def fit_cover_image(
     box_y: float,
     box_w: float,
     box_h: float,
+    fit_mode: str = "cover",
 ) -> None:
     with Image.open(image_path) as img:
         rgb = img.convert("RGB")
         iw, ih = rgb.size
         img_reader = ImageReader(rgb)
 
-    scale = max(box_w / iw, box_h / ih)
+    if fit_mode == "contain":
+        scale = min(box_w / iw, box_h / ih)
+    else:
+        scale = max(box_w / iw, box_h / ih)
+
     draw_w = iw * scale
     draw_h = ih * scale
     draw_x = box_x + (box_w - draw_w) / 2
@@ -632,6 +648,15 @@ def wrap_poem_line(line: str, font_name: str, font_size: int, max_width: float) 
         wrapped.append(" ".join(current))
 
     return wrapped
+
+
+def get_poem_stanza_lines(scene_text: str, font_name: str, font_size: int, max_width: float) -> List[str]:
+    """Split stanza text by newlines and wrap each verse line individually."""
+    lines: List[str] = []
+    for line in scene_text.splitlines():
+        wrapped = wrap_poem_line(line, font_name, font_size, max_width)
+        lines.extend(wrapped)
+    return lines
 
 
 def draw_poem_pages(
@@ -712,12 +737,14 @@ def render_pdf(
     cover_author_font: str | None = None,
     cover_author_y: float = 145.0,
     cover_author_size: int | None = None,
+    image_fit_mode: str = "contain",
+    content_type: str = "story",
 ) -> None:
     c = canvas.Canvas(str(pdf_path), pagesize=page_size)
     page_w, page_h = page_size
     margin = 32
 
-    fit_cover_image(c, cover_image, 0, 0, page_w, page_h)
+    fit_cover_image(c, cover_image, 0, 0, page_w, page_h, fit_mode="cover")
     c.setFillColorRGB(1, 1, 1)
     
     if not no_cover_title:
@@ -749,7 +776,10 @@ def render_pdf(
     for idx, (scene_text, scene_image) in enumerate(zip(scenes, scene_images), start=1):
         current_layout = layout_mode
         if current_layout == "3":
-            lines = wrap_lines(scene_text, pdf_style.font_name, pdf_style.body_size, page_w - 2 * margin)
+            if content_type == "song":
+                lines = get_poem_stanza_lines(scene_text, pdf_style.font_name, pdf_style.body_size, page_w - 2 * margin)
+            else:
+                lines = wrap_lines(scene_text, pdf_style.font_name, pdf_style.body_size, page_w - 2 * margin)
             current_layout = "2" if len(lines) > 5 else "1"
 
         if current_layout == "2":
@@ -759,7 +789,10 @@ def render_pdf(
             if include_scene_text:
                 c.setFillColorRGB(0.12, 0.12, 0.12)
                 c.setFont(pdf_style.font_name, pdf_style.body_size)
-                lines = wrap_lines(scene_text, pdf_style.font_name, pdf_style.body_size, page_w - 2 * margin)
+                if content_type == "song":
+                    lines = get_poem_stanza_lines(scene_text, pdf_style.font_name, pdf_style.body_size, page_w - 2 * margin)
+                else:
+                    lines = wrap_lines(scene_text, pdf_style.font_name, pdf_style.body_size, page_w - 2 * margin)
                 total_text_h = len(lines) * (pdf_style.body_size + pdf_style.line_gap)
                 text_y = (page_h + total_text_h) / 2
                 for line in lines:
@@ -770,7 +803,7 @@ def render_pdf(
             # Illustration Page
             c.setFillColorRGB(1, 1, 1)
             c.rect(0, 0, page_w, page_h, fill=1, stroke=0)
-            fit_cover_image(c, scene_image, 0, 0, page_w, page_h)
+            fit_cover_image(c, scene_image, 0, 0, page_w, page_h, fit_mode=image_fit_mode)
             c.setFillColorRGB(0, 0, 0)
             c.setFont(pdf_style.font_name, 11)
             c.drawRightString(page_w - margin, 22, f"{idx}/{total_story_pages}")
@@ -785,17 +818,33 @@ def render_pdf(
 
             c.setFillColorRGB(1, 1, 1)
             c.rect(0, 0, page_w, page_h, fill=1, stroke=0)
-            fit_cover_image(c, scene_image, image_box_x, image_box_y, image_box_w, image_box_h)
+            fit_cover_image(c, scene_image, image_box_x, image_box_y, image_box_w, image_box_h, fit_mode=image_fit_mode)
 
             if include_scene_text:
                 c.setFillColorRGB(0.12, 0.12, 0.12)
                 c.setFont(pdf_style.font_name, pdf_style.body_size)
-                lines = wrap_lines(scene_text, pdf_style.font_name, pdf_style.body_size, page_w - 2 * margin)
-                text_y = page_h * 0.28
-                max_lines = 6
-                for line in lines[:max_lines]:
-                    c.drawString(margin, text_y, line)
-                    text_y -= (pdf_style.body_size + pdf_style.line_gap)
+                
+                if content_type == "song":
+                    lines = get_poem_stanza_lines(scene_text, pdf_style.font_name, pdf_style.body_size, page_w - 2 * margin)
+                    total_text_h = len(lines) * (pdf_style.body_size + pdf_style.line_gap)
+                    
+                    # Center the poem text vertically in the bottom region (from margin to page_h * 0.32)
+                    available_top = page_h * 0.32
+                    available_bottom = margin + 10
+                    available_h = available_top - available_bottom
+                    text_y = available_bottom + (available_h + total_text_h) / 2 - pdf_style.body_size
+                    text_y = min(text_y, available_top - pdf_style.body_size)
+                    
+                    for line in lines:
+                        c.drawCentredString(page_w / 2, text_y, line)
+                        text_y -= (pdf_style.body_size + pdf_style.line_gap)
+                else:
+                    lines = wrap_lines(scene_text, pdf_style.font_name, pdf_style.body_size, page_w - 2 * margin)
+                    text_y = page_h * 0.28
+                    max_lines = 6
+                    for line in lines[:max_lines]:
+                        c.drawString(margin, text_y, line)
+                        text_y -= (pdf_style.body_size + pdf_style.line_gap)
 
             c.setFont(pdf_style.font_name, 11)
             c.drawRightString(page_w - margin, 22, f"{idx}/{total_story_pages}")
@@ -878,15 +927,64 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Allow automatic placeholder fallback if local SD API is unavailable.",
     )
+    parser.add_argument(
+        "--image-fit-mode",
+        type=str,
+        default="contain",
+        choices=["contain", "cover"],
+        help="Image fit mode: contain (whole image visible) or cover (crop to fill page/box).",
+    )
+    parser.add_argument(
+        "--content-type",
+        type=str,
+        default="",
+        choices=["story", "song", ""],
+        help="Content type: story or song/poem.",
+    )
+    parser.add_argument(
+        "--layout-mode",
+        type=str,
+        default="",
+        choices=["1", "2", "3", ""],
+        help="Layout mode: 1 (Text below), 2 (Text left, image right), 3 (Auto).",
+    )
+    parser.add_argument(
+        "--include-scene-text",
+        type=str,
+        default="auto",
+        choices=["yes", "no", "auto"],
+        help="Whether to include scene text on illustration pages.",
+    )
+    parser.add_argument(
+        "--include-full-text",
+        type=str,
+        default="auto",
+        choices=["yes", "no", "auto"],
+        help="Whether to include full text page at the beginning.",
+    )
+    parser.add_argument(
+        "--use-existing-images",
+        action="store_true",
+        help="Skip image generation and use existing images in the output folder.",
+    )
+    parser.add_argument(
+        "--images-dir",
+        type=str,
+        default="",
+        help="Optional path to a custom folder containing cover.png and scene_XX.png files to compile.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     # Ensure stdout is line-buffered/flushed immediately in non-interactive terminals or IDE runners
     try:
-        sys.stdout.reconfigure(line_buffering=True)
-    except (AttributeError, io.UnsupportedOperation):
-        pass
+        sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)
+    except Exception:
+        try:
+            sys.stdout.reconfigure(line_buffering=True)
+        except Exception:
+            pass
 
     args = parse_args()
 
@@ -904,11 +1002,58 @@ def main() -> None:
     title = ask("Book title", "My AI Book")
     author = ask("Author", "Unknown")
     age_group = ask("Age group (3-5 / 6-8 / 9-12)", "6-8")
-    main_name = ask("Main character name", "Mila")
-    main_type = ask("Main character type (girl, boy, animal, creature)", "girl")
-    main_description = ask("Detailed character description", "little silver dragon with shiny round sapphire-blue eyes, two tiny gold horns, a red velvet backpack, and small translucent wings")
-    content_type = ask("Is this a story or a song/poem? (story/song)", "story").strip().lower()
-    if content_type not in {"story", "song"}:
+
+    use_existing = False
+    images_source_dir = None
+
+    if args.images_dir:
+        use_existing = True
+        images_source_dir = Path(args.images_dir)
+    elif args.use_existing_images:
+        use_existing = True
+        images_source_dir = images_dir
+    else:
+        has_existing_images = (images_dir / "cover.png").exists() or (images_dir / "scene_01.png").exists()
+        if has_existing_images and not args.placeholders:
+            print("\n=== Illustration Source Selection ===")
+            print("Existing illustrations were found in the output directory.")
+            print("How would you like to obtain illustrations for the book?")
+            print("1. Generate new illustrations (using Stable Diffusion or Gemini) [default]")
+            print("2. Reuse existing illustrations in the output directory")
+            print("3. Use placeholder illustrations")
+            print("4. Reuse illustrations from a custom folder")
+            choice = ask("Choose option (1/2/3/4)", "1").strip()
+            if choice == "2":
+                use_existing = True
+                images_source_dir = images_dir
+            elif choice == "3":
+                args.placeholders = True
+            elif choice == "4":
+                while True:
+                    custom_path = ask("Path to custom folder containing illustrations").strip()
+                    custom_dir = Path(custom_path).expanduser()
+                    if custom_dir.exists() and custom_dir.is_dir():
+                        use_existing = True
+                        images_source_dir = custom_dir
+                        break
+                    print("Directory does not exist. Please enter a valid directory path.")
+
+    if not use_existing:
+        main_name = ask("Main character name", "Mila")
+        main_type = ask("Main character type (girl, boy, animal, creature)", "girl")
+        main_description = ask("Detailed character description", "little silver dragon with shiny round sapphire-blue eyes, two tiny gold horns, a red velvet backpack, and small translucent wings")
+    else:
+        main_name = ""
+        main_type = ""
+        main_description = ""
+    content_type_default = args.content_type if args.content_type else "story"
+    print("\nNote: For songs/poems, the line-by-line verse formatting is taken directly from the txt file.")
+    content_type = ask("Is this a story or a song/poem? (story/song)", content_type_default).strip().lower()
+    if content_type in {"song", "poem", "song/poem", "p"}:
+        content_type = "song"
+    elif content_type in {"story", "s"}:
+        content_type = "story"
+    else:
         print("Invalid choice. Using 'story'.")
         content_type = "story"
 
@@ -923,7 +1068,9 @@ def main() -> None:
             song_illustration_mode = "one"
 
     layout_mode = "1"
-    if content_type == "story":
+    if args.layout_mode:
+        layout_mode = args.layout_mode
+    elif content_type == "story" or (content_type == "song" and song_illustration_mode == "multiple"):
         print("\nPage layout:")
         print("1. Text below illustration (best for short sentences)")
         print("2. Text on left page, full illustration on right page (best for long text)")
@@ -932,17 +1079,63 @@ def main() -> None:
         if layout_mode not in {"1", "2", "3"}:
             layout_mode = "3"
 
+    # Image fit mode selection
+    image_fit_mode = "contain"
+    if args.image_fit_mode in {"contain", "cover"}:
+        print(f"\nImage fit mode:")
+        print("1. Contain (whole image is visible, no cropping - recommended)")
+        print("2. Cover (image fills the frame, might crop edges)")
+        fit_choice = ask("Choose image fit mode (1/2)", "1" if args.image_fit_mode == "contain" else "2").strip()
+        image_fit_mode = "cover" if fit_choice == "2" else "contain"
+
+    # Determine scene text and full text page preferences
+    include_scene_text = True
+    include_full_text_page = False
+
+    # 1. include_full_text_page setting
+    if args.include_full_text == "yes":
+        include_full_text_page = True
+    elif args.include_full_text == "no":
+        include_full_text_page = False
+    else:
+        if content_type == "song":
+            include_full_text_page = ask("Include full poem/song text page at the beginning? (y/n)", "n").strip().lower() in {"y", "yes"}
+        else:
+            include_full_text_page = False
+
+    # 2. include_scene_text setting
+    if args.include_scene_text == "yes":
+        include_scene_text = True
+    elif args.include_scene_text == "no":
+        include_scene_text = False
+    else:
+        if content_type == "song" and song_illustration_mode == "one":
+            include_scene_text = False
+        else:
+            default_val = "y"
+            prompt_msg = "Include text below each illustration? (y/n)"
+            include_scene_text = ask(prompt_msg, default_val).strip().lower() in {"y", "yes"}
+
     chosen_format = choose_book_format(args.book_format)
 
-    suggestions = build_suggestions(main_name, main_type, main_description)
-    chosen_style = select_suggestion(suggestions)
+    if not use_existing:
+        suggestions = build_suggestions(main_name, main_type, main_description)
+        chosen_style = select_suggestion(suggestions)
+    else:
+        chosen_style = CharacterSuggestion(
+            name="Existing Images",
+            palette="N/A",
+            clothing="N/A",
+            visual_style="N/A",
+            prompt_fragment="N/A"
+        )
 
-    scenes = extract_scenes(story_text, args.max_scenes)
+    scenes = extract_scenes(story_text, args.max_scenes, content_type)
     if not scenes:
         raise SystemExit("Could not extract any scenes from text.")
 
     if content_type == "song" and song_illustration_mode == "one":
-        scenes = [" ".join(story_text.split())]
+        scenes = [story_text.strip()]
 
     print("\nDetected scenes:")
     for i, s in enumerate(scenes, start=1):
@@ -953,98 +1146,138 @@ def main() -> None:
     if proceed not in {"y", "yes"}:
         raise SystemExit("Canceled by user.")
 
-    ask_generation_settings(args)
+    if use_existing:
+        missing_images = []
+        cover_src = images_source_dir / "cover.png"
+        if not cover_src.exists():
+            missing_images.append("cover.png")
+        for i in range(1, len(scenes) + 1):
+            scene_src = images_source_dir / f"scene_{i:02d}.png"
+            if not scene_src.exists():
+                missing_images.append(f"scene_{i:02d}.png")
+        
+        if missing_images:
+            print(f"\nWarning: The following required images are missing in {images_source_dir}:")
+            for img in missing_images:
+                print(f"  - {img}")
+            fallback = ask("Force image generation or use placeholders instead? (generate/placeholder/exit)", "placeholder").strip().lower()
+            if fallback == "generate":
+                use_existing = False
+                main_name = ask("Main character name", "Mila")
+                main_type = ask("Main character type (girl, boy, animal, creature)", "girl")
+                main_description = ask("Detailed character description", "little silver dragon with shiny round sapphire-blue eyes, two tiny gold horns, a red velvet backpack, and small translucent wings")
+                suggestions = build_suggestions(main_name, main_type, main_description)
+                chosen_style = select_suggestion(suggestions)
+            elif fallback == "placeholder":
+                use_existing = False
+                args.placeholders = True
+            else:
+                raise SystemExit("Aborted by user.")
+
+        if use_existing and images_source_dir != images_dir:
+            import shutil
+            print(f"\nCopying illustrations from {images_source_dir} to {images_dir}...")
+            # Ensure output images directory exists
+            images_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy(images_source_dir / "cover.png", images_dir / "cover.png")
+            for i in range(1, len(scenes) + 1):
+                shutil.copy(images_source_dir / f"scene_{i:02d}.png", images_dir / f"scene_{i:02d}.png")
+
+    if not use_existing:
+        ask_generation_settings(args)
 
     client = Automatic1111Client(args.sd_base_url, args.timeout)
     gemini_client = GeminiImagesClient(
         api_key=args.gemini_api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GENAI_API_KEY") or "",
         model=args.gemini_image_model,
     )
-    use_generator = (not args.placeholders) and client.is_available()
+    use_generator = False
     use_gemini_fallback = False
     provider_transitions: List[dict] = []
 
-    if args.placeholders:
-        provider_transitions.append(
-            {
-                "from": "local_stable_diffusion",
-                "to": "placeholder",
-                "reason": "manual_placeholders_flag",
-            }
-        )
+    if not use_existing:
+        use_generator = (not args.placeholders) and client.is_available()
+        if args.placeholders:
+            provider_transitions.append(
+                {
+                    "from": "local_stable_diffusion",
+                    "to": "placeholder",
+                    "reason": "manual_placeholders_flag",
+                }
+            )
 
-    if not use_generator and not args.placeholders:
-        print(
-            "\nLocal Stable Diffusion API is unavailable "
-            f"({args.sd_base_url})."
-        )
+        if not use_generator and not args.placeholders:
+            print(
+                "\nLocal Stable Diffusion API is unavailable "
+                f"({args.sd_base_url})."
+            )
 
-        if args.fallback_provider in {"gemini", "auto"}:
-            if gemini_client.is_available():
-                if ask_gemini_fallback_consent():
-                    use_gemini_fallback = True
-                    provider_transitions.append(
-                        {
-                            "from": "local_stable_diffusion",
-                            "to": "gemini_fallback",
-                            "reason": "local_sd_unavailable_user_consented_gemini",
-                        }
-                    )
-                    print("Using Gemini Images fallback provider.")
+            if args.fallback_provider in {"gemini", "auto"}:
+                if gemini_client.is_available():
+                    if ask_gemini_fallback_consent():
+                        use_gemini_fallback = True
+                        provider_transitions.append(
+                            {
+                                "from": "local_stable_diffusion",
+                                "to": "gemini_fallback",
+                                "reason": "local_sd_unavailable_user_consented_gemini",
+                            }
+                        )
+                        print("Using Gemini Images fallback provider.")
+                    else:
+                        print("Gemini fallback not enabled because consent was not granted.")
                 else:
-                    print("Gemini fallback not enabled because consent was not granted.")
-            else:
-                if args.fallback_provider == "gemini":
-                    print("Gemini fallback provider is selected, but API key is missing.")
+                    if args.fallback_provider == "gemini":
+                        print("Gemini fallback provider is selected, but API key is missing.")
+                        fallback_answer = ask("Continue with placeholder illustrations? (y/n)", "y").lower()
+                        if fallback_answer not in {"y", "yes"}:
+                            raise SystemExit(
+                                "Gemini fallback requires GEMINI_API_KEY, GENAI_API_KEY or --gemini-api-key."
+                            )
+                        provider_transitions.append(
+                            {
+                                "from": "local_stable_diffusion",
+                                "to": "placeholder",
+                                "reason": "gemini_key_missing_user_confirmed_placeholder",
+                            }
+                        )
+                        print("Using placeholder images because Gemini API key is not configured.")
+                    else:
+                        provider_transitions.append(
+                            {
+                                "from": "local_stable_diffusion",
+                                "to": "placeholder",
+                                "reason": "local_sd_unavailable_gemini_key_missing",
+                            }
+                        )
+                        print("Gemini API key is not configured. Auto mode will continue with placeholders.")
+
+            if not use_gemini_fallback:
+                fallback_reason = "--allow-placeholder-fallback is enabled"
+                if not args.allow_placeholder_fallback:
                     fallback_answer = ask("Continue with placeholder illustrations? (y/n)", "y").lower()
                     if fallback_answer not in {"y", "yes"}:
                         raise SystemExit(
-                            "Gemini fallback requires GEMINI_API_KEY, GENAI_API_KEY or --gemini-api-key."
+                            "Local Stable Diffusion API is unavailable. "
+                            "Start your local server and retry, or use --placeholders / --allow-placeholder-fallback."
                         )
+                    fallback_reason = "interactive fallback is confirmed"
+                if not provider_transitions:
                     provider_transitions.append(
                         {
                             "from": "local_stable_diffusion",
                             "to": "placeholder",
-                            "reason": "gemini_key_missing_user_confirmed_placeholder",
+                            "reason": (
+                                "local_sd_unavailable_allow_placeholder_flag"
+                                if args.allow_placeholder_fallback
+                                else "local_sd_unavailable_user_confirmed_placeholder"
+                            ),
                         }
                     )
-                    print("Using placeholder images because Gemini API key is not configured.")
-                else:
-                    provider_transitions.append(
-                        {
-                            "from": "local_stable_diffusion",
-                            "to": "placeholder",
-                            "reason": "local_sd_unavailable_gemini_key_missing",
-                        }
-                    )
-                    print("Gemini API key is not configured. Auto mode will continue with placeholders.")
-
-        if not use_gemini_fallback:
-            fallback_reason = "--allow-placeholder-fallback is enabled"
-            if not args.allow_placeholder_fallback:
-                fallback_answer = ask("Continue with placeholder illustrations? (y/n)", "y").lower()
-                if fallback_answer not in {"y", "yes"}:
-                    raise SystemExit(
-                        "Local Stable Diffusion API is unavailable. "
-                        "Start your local server and retry, or use --placeholders / --allow-placeholder-fallback."
-                    )
-                fallback_reason = "interactive fallback is confirmed"
-            if not provider_transitions:
-                provider_transitions.append(
-                    {
-                        "from": "local_stable_diffusion",
-                        "to": "placeholder",
-                        "reason": (
-                            "local_sd_unavailable_allow_placeholder_flag"
-                            if args.allow_placeholder_fallback
-                            else "local_sd_unavailable_user_confirmed_placeholder"
-                        ),
-                    }
+                print(
+                    "Local Stable Diffusion API was not found at "
+                    f"{args.sd_base_url}. Using placeholder images because {fallback_reason}."
                 )
-            print(
-                "Local Stable Diffusion API was not found at "
-                f"{args.sd_base_url}. Using placeholder images because {fallback_reason}."
-            )
 
     negative_prompt = (
         "blurry, watermark, logo, signature, text, extra limbs, deformed face, "
@@ -1052,7 +1285,7 @@ def main() -> None:
     )
 
     # Character Design Approval Phase
-    if use_generator or use_gemini_fallback:
+    if not use_existing and (use_generator or use_gemini_fallback):
         print("\n=== Character Design Approval Phase ===")
         while True:
             preview_path = images_dir / "character_design_preview.png"
@@ -1153,6 +1386,12 @@ def main() -> None:
             "seed": args.seed,
             "keep_consistent_look": getattr(args, "keep_consistent_look", True),
         },
+        "pdf_settings": {
+            "layout_mode": layout_mode,
+            "image_fit_mode": image_fit_mode,
+            "include_scene_text": include_scene_text,
+            "include_full_text_page": include_full_text_page,
+        },
         "style": chosen_style.__dict__,
         "scenes": [],
     }
@@ -1160,6 +1399,12 @@ def main() -> None:
     for index, scene in enumerate(scenes, start=1):
         image_path = images_dir / f"scene_{index:02d}.png"
         prompt = build_scene_prompt(chosen_style, scene)
+
+        if use_existing:
+            scene_image_paths.append(image_path)
+            prompt_log["scenes"].append({"index": index, "scene_text": scene, "prompt": "Reused existing illustration"})
+            print(f"Reused: {image_path}")
+            continue
 
         if use_generator:
             keep_consistent_look = getattr(args, "keep_consistent_look", True)
@@ -1209,31 +1454,43 @@ def main() -> None:
     cover_prompt = build_cover_prompt(chosen_style, story_text, title)
     cover_path = images_dir / "cover.png"
 
-    if use_generator:
-        keep_consistent_look = getattr(args, "keep_consistent_look", True)
-        cover_seed = (args.seed + 999) if keep_consistent_look else -1
-        cover_img = client.txt2img(
-            prompt=cover_prompt,
-            negative_prompt=negative_prompt,
-            width=args.image_width,
-            height=args.image_height,
-            steps=max(args.steps, 40),
-            cfg_scale=args.cfg_scale,
-            seed=cover_seed,
-            sampler_name=args.sampler,
-        )
-        cover_img.save(cover_path)
-    elif use_gemini_fallback:
-        try:
-            cover_img = gemini_client.txt2img(
+    if use_existing:
+        print(f"Reused cover: {cover_path}")
+        prompt_log["cover_prompt"] = "Reused existing illustration"
+    else:
+        if use_generator:
+            keep_consistent_look = getattr(args, "keep_consistent_look", True)
+            cover_seed = (args.seed + 999) if keep_consistent_look else -1
+            cover_img = client.txt2img(
                 prompt=cover_prompt,
+                negative_prompt=negative_prompt,
                 width=args.image_width,
                 height=args.image_height,
+                steps=max(args.steps, 40),
+                cfg_scale=args.cfg_scale,
+                seed=cover_seed,
+                sampler_name=args.sampler,
             )
             cover_img.save(cover_path)
-        except Exception as e:
-            print(f"\n[WARNING] Failed to generate cover image due to error: {e}")
-            print("Falling back to placeholder image for the cover.")
+        elif use_gemini_fallback:
+            try:
+                cover_img = gemini_client.txt2img(
+                    prompt=cover_prompt,
+                    width=args.image_width,
+                    height=args.image_height,
+                )
+                cover_img.save(cover_path)
+            except Exception as e:
+                print(f"\n[WARNING] Failed to generate cover image due to error: {e}")
+                print("Falling back to placeholder image for the cover.")
+                create_placeholder_image(
+                    path=cover_path,
+                    title=title,
+                    scene_text="",
+                    width=args.image_width,
+                    height=args.image_height,
+                )
+        else:
             create_placeholder_image(
                 path=cover_path,
                 title=title,
@@ -1241,16 +1498,7 @@ def main() -> None:
                 width=args.image_width,
                 height=args.image_height,
             )
-    else:
-        create_placeholder_image(
-            path=cover_path,
-            title=title,
-            scene_text="",
-            width=args.image_width,
-            height=args.image_height,
-        )
-
-    prompt_log["cover_prompt"] = cover_prompt
+        prompt_log["cover_prompt"] = cover_prompt
 
     font_name = ensure_font(args.font_path or None)
     pdf_style = get_pdf_style(age_group.strip(), font_name)
@@ -1268,13 +1516,15 @@ def main() -> None:
         cover_image=cover_path,
         pdf_style=pdf_style,
         page_size=chosen_format.page_size,
-        include_full_text_page=(content_type == "song"),
-        include_scene_text=(content_type == "story"),
+        include_full_text_page=include_full_text_page,
+        include_scene_text=include_scene_text,
         layout_mode=layout_mode,
         no_cover_title=args.no_cover_title,
         cover_author_font=args.cover_author_font or None,
         cover_author_y=args.cover_author_y,
         cover_author_size=args.cover_author_size,
+        image_fit_mode=image_fit_mode,
+        content_type=content_type,
     )
 
     prompts_path = output_dir / f"{slugify(title)}_generation_prompts.json"
@@ -1409,13 +1659,15 @@ def main() -> None:
                 cover_image=cover_path,
                 pdf_style=pdf_style,
                 page_size=chosen_format.page_size,
-                include_full_text_page=(content_type == "song"),
-                include_scene_text=(content_type == "story"),
+                include_full_text_page=include_full_text_page,
+                include_scene_text=include_scene_text,
                 layout_mode=layout_mode,
                 no_cover_title=args.no_cover_title,
                 cover_author_font=args.cover_author_font or None,
                 cover_author_y=args.cover_author_y,
                 cover_author_size=args.cover_author_size,
+                image_fit_mode=image_fit_mode,
+                content_type=content_type,
             )
             prompts_path.write_text(json.dumps(prompt_log, ensure_ascii=False, indent=2), encoding="utf-8")
             print(f"\nPDF and prompts log updated successfully!")
@@ -1445,6 +1697,36 @@ def main() -> None:
             font_path_ans = ask(f"Main body font path (currently '{current_font_path}', press Enter to keep)", current_font_path).strip()
             args.font_path = font_path_ans
 
+            # New options in Choice 2:
+            print(f"\nPage layout (currently: {layout_mode}):")
+            print("1. Text below illustration (best for short sentences)")
+            print("2. Text on left page, full illustration on right page (best for long text)")
+            print("3. Auto (decide based on text length)")
+            layout_mode_ans = ask("Choose layout (1/2/3, Enter to keep)", layout_mode).strip()
+            if layout_mode_ans in {"1", "2", "3"}:
+                layout_mode = layout_mode_ans
+
+            print(f"\nImage fit mode (currently: {image_fit_mode}):")
+            print("1. Contain (whole image visible, no cropping - recommended)")
+            print("2. Cover (image fills the frame, might crop edges)")
+            fit_choice_ans = ask("Choose image fit mode (1/2, Enter to keep)", "1" if image_fit_mode == "contain" else "2").strip()
+            if fit_choice_ans in {"1", "2"}:
+                image_fit_mode = "cover" if fit_choice_ans == "2" else "contain"
+
+            include_scene_text_ans = ask(f"Include text below/beside illustrations? (y/n, currently {'y' if include_scene_text else 'n'})", "y" if include_scene_text else "n").strip().lower()
+            include_scene_text = include_scene_text_ans in {"y", "yes"}
+
+            include_full_text_page_ans = ask(f"Include full text page at beginning? (y/n, currently {'y' if include_full_text_page else 'n'})", "y" if include_full_text_page else "n").strip().lower()
+            include_full_text_page = include_full_text_page_ans in {"y", "yes"}
+
+            # Update prompt log settings
+            prompt_log["pdf_settings"] = {
+                "layout_mode": layout_mode,
+                "image_fit_mode": image_fit_mode,
+                "include_scene_text": include_scene_text,
+                "include_full_text_page": include_full_text_page,
+            }
+
             font_name = ensure_font(args.font_path or None)
             pdf_style = get_pdf_style(age_group.strip(), font_name)
 
@@ -1458,15 +1740,18 @@ def main() -> None:
                 cover_image=cover_path,
                 pdf_style=pdf_style,
                 page_size=chosen_format.page_size,
-                include_full_text_page=(content_type == "song"),
-                include_scene_text=(content_type == "story"),
+                include_full_text_page=include_full_text_page,
+                include_scene_text=include_scene_text,
                 layout_mode=layout_mode,
                 no_cover_title=args.no_cover_title,
                 cover_author_font=args.cover_author_font or None,
                 cover_author_y=args.cover_author_y,
                 cover_author_size=args.cover_author_size,
+                image_fit_mode=image_fit_mode,
+                content_type=content_type,
             )
-            print(f"\nPDF updated with styling changes!")
+            prompts_path.write_text(json.dumps(prompt_log, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"\nPDF and prompts log updated with styling changes!")
 
         elif choice == "3":
             break
