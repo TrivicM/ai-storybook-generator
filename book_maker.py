@@ -36,6 +36,16 @@ from reportlab.pdfgen import canvas
 from google import genai
 from google.genai import types
 
+from dotenv import load_dotenv
+load_dotenv()
+
+from ai_storybook_generator.skills import (
+    StoryAnalysisSkill,
+    PromptOptimizationSkill,
+    CharacterConsistencySkill,
+    CostMonitoringSkill
+)
+
 @dataclass
 class CharacterSuggestion:
     name: str
@@ -81,6 +91,7 @@ class Automatic1111Client:
         cfg_scale: float,
         seed: int,
         sampler_name: str,
+        alwayson_scripts: dict | None = None,
     ) -> Image.Image:
         payload = {
             "prompt": prompt,
@@ -94,6 +105,9 @@ class Automatic1111Client:
             "batch_size": 1,
             "n_iter": 1,
         }
+
+        if alwayson_scripts:
+            payload["alwayson_scripts"] = alwayson_scripts
 
         try:
             resp = requests.post(
@@ -973,6 +987,13 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Optional path to a custom folder containing cover.png and scene_XX.png files to compile.",
     )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="classic",
+        choices=["classic", "ai_enhanced"],
+        help="Execution mode: classic (regex parsing) or ai_enhanced (Gemini-based scene and prompt optimization).",
+    )
     return parser.parse_args()
 
 
@@ -1118,6 +1139,56 @@ def main() -> None:
 
     chosen_format = choose_book_format(args.book_format)
 
+    # -------------------------------------------------------------
+    # Agent Skills: Story Analysis Phase
+    # -------------------------------------------------------------
+    api_key = args.gemini_api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GENAI_API_KEY") or ""
+    
+    pipeline_context = {
+        "story_text": story_text,
+        "mode": args.mode,
+        "max_scenes": args.max_scenes,
+        "content_type": content_type,
+        "api_key": api_key,
+        "output_dir": args.output_dir,
+        "book_title": title,
+        "author": author,
+        "main_character_name": main_name,
+        "main_character_type": main_type,
+        "main_character_description": main_description,
+        "use_existing_images": use_existing,
+        "skills_metrics": [],
+        "scenes_count": 0
+    }
+
+    print(f"\n[Skills Pipeline] Running Story Analysis Skill in '{args.mode}' mode...")
+    story_analysis = StoryAnalysisSkill()
+    pipeline_context = story_analysis.run(pipeline_context)
+    pipeline_context["skills_metrics"].append(story_analysis.get_metrics())
+
+    # Update parameters from skill context
+    title = pipeline_context.get("book_title", title)
+    main_name = pipeline_context.get("main_character_name", main_name)
+    main_type = pipeline_context.get("main_character_type", main_type)
+    main_description = pipeline_context.get("main_character_description", main_description)
+    scenes = pipeline_context.get("scenes", [])
+    
+    if args.mode == "ai_enhanced" and not pipeline_context.get("mode_fallback_triggered"):
+        print(f"\n[AI Suggested Style]: {pipeline_context.get('suggested_style', 'watercolor')}")
+
+    if content_type == "song" and song_illustration_mode == "one":
+        scenes = [story_text.strip()]
+        pipeline_context["scenes"] = scenes
+
+    print("\nDetected scenes:")
+    for i, s in enumerate(scenes, start=1):
+        short = s if len(s) <= 120 else s[:117] + "..."
+        print(f"{i}. {short}")
+
+    proceed = ask("Continue with these scenes? (y/n)", "y").lower()
+    if proceed not in {"y", "yes"}:
+        raise SystemExit("Canceled by user.")
+
     if not use_existing:
         suggestions = build_suggestions(main_name, main_type, main_description)
         chosen_style = select_suggestion(suggestions)
@@ -1129,22 +1200,6 @@ def main() -> None:
             visual_style="N/A",
             prompt_fragment="N/A"
         )
-
-    scenes = extract_scenes(story_text, args.max_scenes, content_type)
-    if not scenes:
-        raise SystemExit("Could not extract any scenes from text.")
-
-    if content_type == "song" and song_illustration_mode == "one":
-        scenes = [story_text.strip()]
-
-    print("\nDetected scenes:")
-    for i, s in enumerate(scenes, start=1):
-        short = s if len(s) <= 120 else s[:117] + "..."
-        print(f"{i}. {short}")
-
-    proceed = ask("Continue with these scenes? (y/n)", "y").lower()
-    if proceed not in {"y", "yes"}:
-        raise SystemExit("Canceled by user.")
 
     if use_existing:
         missing_images = []
@@ -1279,6 +1334,35 @@ def main() -> None:
                     f"{args.sd_base_url}. Using placeholder images because {fallback_reason}."
                 )
 
+    # -------------------------------------------------------------
+    # Agent Skills: Prompt & Consistency Phase
+    # -------------------------------------------------------------
+    pipeline_context["image_provider"] = (
+        "local_stable_diffusion"
+        if use_generator
+        else "gemini_fallback"
+        if use_gemini_fallback
+        else "placeholder"
+    )
+    pipeline_context["chosen_style"] = chosen_style
+    pipeline_context["use_ip_adapter"] = getattr(args, "keep_consistent_look", True)
+
+    print("\n[Skills Pipeline] Running Prompt Optimization Skill...")
+    prompt_skill = PromptOptimizationSkill()
+    pipeline_context = prompt_skill.run(pipeline_context)
+    pipeline_context["skills_metrics"].append(prompt_skill.get_metrics())
+
+    print("[Skills Pipeline] Running Character Consistency Skill...")
+    consistency_skill = CharacterConsistencySkill()
+    pipeline_context = consistency_skill.run(pipeline_context)
+    pipeline_context["skills_metrics"].append(consistency_skill.get_metrics())
+
+    # Extract results
+    character_design_prompt = pipeline_context.get("character_design_prompt")
+    scene_prompts = pipeline_context.get("scene_prompts", {})
+    cover_prompt = pipeline_context.get("cover_prompt", "")
+    alwayson_scripts = pipeline_context.get("alwayson_scripts", None)
+
     negative_prompt = (
         "blurry, watermark, logo, signature, text, extra limbs, deformed face, "
         "bad anatomy, low quality"
@@ -1289,7 +1373,7 @@ def main() -> None:
         print("\n=== Character Design Approval Phase ===")
         while True:
             preview_path = images_dir / "character_design_preview.png"
-            preview_prompt = build_character_design_prompt(chosen_style)
+            preview_prompt = character_design_prompt
             
             print(f"\nGenerating character design preview with style: '{chosen_style.name}'")
             print(f"Character description: '{main_description}'")
@@ -1363,6 +1447,16 @@ def main() -> None:
             elif choice == "5":
                 break
 
+            # Propagate changes back to context and re-run skills
+            pipeline_context["main_character_description"] = main_description
+            pipeline_context["chosen_style"] = chosen_style
+            pipeline_context = prompt_skill.run(pipeline_context)
+            pipeline_context = consistency_skill.run(pipeline_context)
+            character_design_prompt = pipeline_context.get("character_design_prompt")
+            scene_prompts = pipeline_context.get("scene_prompts", {})
+            cover_prompt = pipeline_context.get("cover_prompt", "")
+            alwayson_scripts = pipeline_context.get("alwayson_scripts", None)
+
     scene_image_paths: List[Path] = []
     prompt_log = {
         "title": title,
@@ -1398,7 +1492,7 @@ def main() -> None:
 
     for index, scene in enumerate(scenes, start=1):
         image_path = images_dir / f"scene_{index:02d}.png"
-        prompt = build_scene_prompt(chosen_style, scene)
+        prompt = scene_prompts.get(index)
 
         if use_existing:
             scene_image_paths.append(image_path)
@@ -1418,8 +1512,10 @@ def main() -> None:
                 cfg_scale=args.cfg_scale,
                 seed=seed,
                 sampler_name=args.sampler,
+                alwayson_scripts=alwayson_scripts,
             )
             image.save(image_path)
+            pipeline_context["images_generated_count"] += 1
         elif use_gemini_fallback:
             try:
                 image = gemini_client.txt2img(
@@ -1428,6 +1524,7 @@ def main() -> None:
                     height=args.image_height,
                 )
                 image.save(image_path)
+                pipeline_context["images_generated_count"] += 1
             except Exception as e:
                 print(f"\n[WARNING] Failed to generate image for Scene {index} due to error: {e}")
                 print("Falling back to placeholder image for this scene to continue book generation.")
@@ -1451,7 +1548,7 @@ def main() -> None:
         prompt_log["scenes"].append({"index": index, "scene_text": scene, "prompt": prompt})
         print(f"Generated: {image_path}")
 
-    cover_prompt = build_cover_prompt(chosen_style, story_text, title)
+    cover_prompt = pipeline_context.get("cover_prompt", cover_prompt)
     cover_path = images_dir / "cover.png"
 
     if use_existing:
@@ -1472,6 +1569,7 @@ def main() -> None:
                 sampler_name=args.sampler,
             )
             cover_img.save(cover_path)
+            pipeline_context["images_generated_count"] += 1
         elif use_gemini_fallback:
             try:
                 cover_img = gemini_client.txt2img(
@@ -1480,6 +1578,7 @@ def main() -> None:
                     height=args.image_height,
                 )
                 cover_img.save(cover_path)
+                pipeline_context["images_generated_count"] += 1
             except Exception as e:
                 print(f"\n[WARNING] Failed to generate cover image due to error: {e}")
                 print("Falling back to placeholder image for the cover.")
@@ -1529,6 +1628,27 @@ def main() -> None:
 
     prompts_path = output_dir / f"{slugify(title)}_generation_prompts.json"
     prompts_path.write_text(json.dumps(prompt_log, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # Run Cost Monitoring Skill to log run metrics
+    cost_skill = CostMonitoringSkill()
+    pipeline_context["scenes_count"] = len(scenes)
+    pipeline_context = cost_skill.run(pipeline_context)
+    pipeline_context["skills_metrics"].append(cost_skill.get_metrics())
+
+    # Print run summary
+    run_metrics = pipeline_context.get("run_metrics", {})
+    m = run_metrics.get("metrics", {})
+    print("\n================================================")
+    print("             RUN RESOURCE SUMMARY")
+    print("================================================")
+    print(f"Execution Mode:       {run_metrics.get('mode').upper()}")
+    print(f"LLM Tokens Consumed:  {m.get('input_tokens') + m.get('output_tokens') + m.get('cached_tokens')}")
+    print(f"  - Input Tokens:     {m.get('input_tokens')}")
+    print(f"  - Output Tokens:    {m.get('output_tokens')}")
+    print(f"  - Cached Tokens:    {m.get('cached_tokens')} (Ušteda: {round((m.get('cached_tokens') / max(1, m.get('input_tokens') + m.get('cached_tokens'))) * 100, 1) if (m.get('input_tokens') + m.get('cached_tokens')) > 0 else 0}%)")
+    print(f"Images Generated:     {m.get('images_generated')} ({run_metrics.get('image_provider')})")
+    print(f"Estimated Cost:       ${round(m.get('total_cost_usd'), 6)} USD")
+    print("================================================")
 
     while True:
         satisfied = ask("\nAre you satisfied with the book? (y/n)", "y").strip().lower()
@@ -1590,6 +1710,7 @@ def main() -> None:
                             sampler_name=args.sampler,
                         )
                         cover_img.save(cover_path)
+                        pipeline_context["images_generated_count"] += 1
                     elif use_gemini_fallback:
                         try:
                             print("Generating with Gemini fallback...")
@@ -1599,6 +1720,7 @@ def main() -> None:
                                 height=args.image_height,
                             )
                             cover_img.save(cover_path)
+                            pipeline_context["images_generated_count"] += 1
                         except Exception as e:
                             print(f"Failed to generate cover image: {e}")
                     else:
@@ -1609,7 +1731,7 @@ def main() -> None:
                     scene_idx = idx - 1
                     scene_text = scenes[scene_idx]
                     scene_image_path = scene_image_paths[scene_idx]
-                    orig_prompt = build_scene_prompt(chosen_style, scene_text)
+                    orig_prompt = scene_prompts.get(idx, f"Scene action: {scene_text}")
                     print(f"\n--- Re-generating Scene {idx} ---")
                     print(f"Original prompt: {orig_prompt}")
                     tweak = ask("Enter additional instructions to append (or press Enter to keep prompt)", "").strip()
@@ -1630,8 +1752,10 @@ def main() -> None:
                             cfg_scale=args.cfg_scale,
                             seed=scene_seed,
                             sampler_name=args.sampler,
+                            alwayson_scripts=alwayson_scripts,
                         )
                         image.save(scene_image_path)
+                        pipeline_context["images_generated_count"] += 1
                     elif use_gemini_fallback:
                         try:
                             print("Generating with Gemini fallback...")
@@ -1641,6 +1765,7 @@ def main() -> None:
                                 height=args.image_height,
                             )
                             image.save(scene_image_path)
+                            pipeline_context["images_generated_count"] += 1
                         except Exception as e:
                             print(f"Failed to generate image for Scene {idx}: {e}")
                     else:
@@ -1671,6 +1796,13 @@ def main() -> None:
             )
             prompts_path.write_text(json.dumps(prompt_log, ensure_ascii=False, indent=2), encoding="utf-8")
             print(f"\nPDF and prompts log updated successfully!")
+            
+            # Update metrics log with regenerated counts
+            pipeline_context = cost_skill.run(pipeline_context)
+            run_metrics = pipeline_context.get("run_metrics", {})
+            m = run_metrics.get("metrics", {})
+            print(f"[Metrics Update] Total Images Generated: {m.get('images_generated')}")
+            print(f"[Metrics Update] Total Cost:             ${round(m.get('total_cost_usd'), 6)} USD")
 
         elif choice == "2":
             print("\nModify PDF layout / styling settings:")
