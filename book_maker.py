@@ -994,6 +994,11 @@ def parse_args() -> argparse.Namespace:
         choices=["classic", "ai_enhanced"],
         help="Execution mode: classic (regex parsing) or ai_enhanced (Gemini-based scene and prompt optimization).",
     )
+    parser.add_argument(
+        "--web",
+        action="store_true",
+        help="Launch the web-based analytics dashboard and generation UI.",
+    )
     return parser.parse_args()
 
 
@@ -1008,6 +1013,17 @@ def main() -> None:
             pass
 
     args = parse_args()
+
+    if args.web:
+        import uvicorn
+        print("\n================================================")
+        print("    STARTING AI STORYBOOK GENERATOR WEB UI      ")
+        print("================================================")
+        print("  Dashboard URL:  http://127.0.0.1:8000")
+        print("  Press Ctrl+C to stop the server.")
+        print("================================================\n")
+        uvicorn.run("ai_storybook_generator.dashboard.dashboard_app:app", host="127.0.0.1", port=8000, reload=False)
+        return
 
     output_dir = Path(args.output_dir)
     images_dir = output_dir / "images"
@@ -1157,6 +1173,7 @@ def main() -> None:
         "main_character_type": main_type,
         "main_character_description": main_description,
         "use_existing_images": use_existing,
+        "images_generated_count": 0,
         "skills_metrics": [],
         "scenes_count": 0
     }
