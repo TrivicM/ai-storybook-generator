@@ -350,6 +350,14 @@ def get_config():
         }
     }
 
+@app.get("/", response_class=HTMLResponse)
+def read_root():
+    """Serves the dashboard's single-page web application HTML template."""
+    template_path = Path(__file__).parent / "templates" / "index.html"
+    if template_path.exists():
+        return HTMLResponse(content=template_path.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h1>Dashboard UI index.html not found!</h1>", status_code=404)
+
 # Mount static file endpoints to allow downloading the generated PDFs and images
 output_path = Path("output")
 output_path.mkdir(parents=True, exist_ok=True)

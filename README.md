@@ -97,27 +97,60 @@ $env:GENAI_API_KEY="your-api-key-here"
 
 ## 📚 Usage
 
-Run the script and follow the interactive prompts:
+Run the script in CLI mode or launch the interactive Web Dashboard:
 
+### 1. Interactive Web Dashboard (Recommended)
+Launch the server and use the premium glassmorphic UI to generate books, customize styles, and track costs:
 ```bash
-python book_maker.py --input-file sample_input/sample_story.txt
+python book_maker.py --web
+```
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000) in your browser.
+
+### 2. Command Line Mode
+```bash
+python book_maker.py --input-file sample_input/sample_story.txt --mode ai_enhanced
 ```
 
 You will be asked to:
-1. Provide the book title, author, and main character details.
-2. Select an illustration style (e.g., Watercolor, Dreamy, Modern).
-3. Choose the page layout (Text below image vs. Separate pages).
+1. Provide the book title, author, and main character details (autodetected in `ai_enhanced` mode).
+2. Select an illustration style.
+3. Choose the page layout.
 4. Review extracted scenes and generation parameters.
-5. **Character Approval Phase**: Inspect the generated character sheet and choose to adjust the description, seed/style, or proceed.
-6. **PDF Review Loop**: Once generated, view the output book and selectively re-generate pages or fine-tune layout/fonts without rebuilding from scratch.
+5. **Character Approval Phase**: Inspect the character sheet and tweak style/seeds.
+6. **PDF Review Loop**: Re-generate pages or fine-tune layout dynamically.
+7. **Resource Summary**: View token consumption, context caching efficiency, and USD costs in the terminal.
 
 ### CLI Arguments
+- `--mode`: Choose execution mode: `classic` (offline, regex parsing) or `ai_enhanced` (Gemini-based scene parsing, character extraction, and prompt expansion).
+- `--web`: Launches the FastAPI-based analytics dashboard and creative studio.
 - `--book-format`: Choose `a4`, `a5`, or `square`.
 - `--fallback-provider`: `auto`, `gemini`, or `placeholder`.
-- `--gemini-api-key`: Pass the Gemini key directly (or set `GEMINI_API_KEY` env var).
+- `--gemini-api-key`: Pass the Gemini key directly (or set `GEMINI_API_KEY` in `.env`).
 - `--gemini-image-model`: Specify the Imagen model (defaults to `imagen-4.0-generate-001`).
 - `--placeholders`: Skip AI generation and generate dummy images for fast layout testing.
 - `--allow-placeholder-fallback`: Automatically use placeholders if the SD API is unreachable.
+
+## 🧠 Agent Skills Architecture
+
+This project is built using a modular, agent-based pipeline. Each logical step of the generation process is isolated as a **Skill** inheriting from a common [BaseSkill](file:///C:/public_projects/portfolio_ai_book/ai_storybook_generator/skills/base_skill.py) interface:
+
+1. [StoryAnalysisSkill](file:///C:/public_projects/portfolio_ai_book/ai_storybook_generator/skills/story_analysis_skill.py): Processes raw story text. In `ai_enhanced` mode, it uses Gemini with Pydantic Structured Outputs to extract scenes, characters, and styles. Falls back to regex if offline.
+2. [PromptOptimizationSkill](file:///C:/public_projects/portfolio_ai_book/ai_storybook_generator/skills/prompt_optimization_skill.py): Enhances raw scene actions into rich descriptive prompts with detailed scene context and camera details.
+3. [CharacterConsistencySkill](file:///C:/public_projects/portfolio_ai_book/ai_storybook_generator/skills/character_consistency_skill.py): Encodes the approved character preview and injects it as a ControlNet IP-Adapter payload.
+4. [CostMonitoringSkill](file:///C:/public_projects/portfolio_ai_book/ai_storybook_generator/skills/cost_monitoring_skill.py): Aggregates execution metrics, calculates token cost (input, output, cached), and logs history to `output/metrics_history.json`.
+
+## ⚙️ Configuration (.env)
+
+Duplicate `.env.example` as `.env` and fill in your parameters:
+```env
+GEMINI_API_KEY=your-api-key-here
+
+# API Pricing override if defaults change
+GEMINI_PRICE_INPUT_1M=0.075
+GEMINI_PRICE_OUTPUT_1M=0.30
+GEMINI_PRICE_CACHED_1M=0.01875
+IMAGEN_PRICE_PER_IMAGE=0.03
+```
 
 ## 📁 Output
 

@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Storybook Generator | Analytics Dashboard</title>
+    
+    <!-- Google Fonts & FontAwesome -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        :root {
+            --bg-base: #0a0915;
+            --glass-bg: rgba(20, 18, 45, 0.45);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-glow: rgba(147, 51, 234, 0.15);
+            --primary: #a855f7;
+            --primary-glow: rgba(168, 85, 247, 0.4);
+            --secondary: #06b6d4;
+            --secondary-glow: rgba(6, 182, 212, 0.4);
+            --accent: #10b981;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --card-radius: 16px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(at 10% 20%, rgba(120, 119, 198, 0.1) 0px, transparent 50%),
+                radial-gradient(at 90% 80%, rgba(6, 182, 212, 0.08) 0px, transparent 50%);
+            background-attachment: fixed;
+            min-height: 100vh;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 24px 5%;
+            background: rgba(10, 9, 21, 0.6);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--glass-border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #a855f7, #06b6d4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo i {
+            background: linear-gradient(135deg, #a855f7, #06b6d4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 28px;
+        }
+
+        .badge-mode {
+            background: rgba(168, 85, 247, 0.15);
+            border: 1px solid rgba(168, 85, 247, 0.3);
+            color: #d8b4fe;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .main-container {
+            max-width: 1400px;
+            margin: 40px auto;
+            padding: 0 4%;
+            display: grid;
+            grid-template-columns: 1.1fr 1.9fr;
+            gap: 32px;
+        }
+
+        @media (max-width: 1100px) {
+            .main-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Glassmorphism Cards */
+        .glass-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            backdrop-filter: blur(16px);
+            border-radius: var(--card-radius);
+            padding: 24px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .glass-card:hover {
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        h2 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 20px;
+            margin-bottom: 20px;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-bottom: 1px solid var(--glass-border);
+            padding-bottom: 12px;
+        }
+
+        h2 i {
+            color: var(--primary);
+        }
+
+        /* Form styling */
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        input[type="text"], textarea, select {
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            color: var(--text-main);
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        input[type="text"]:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: var(--primary);
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 0 8px var(--primary-glow);
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .toggle-group {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--glass-border);
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(255, 255, 255, 0.1);
+            transition: .3s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--primary);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(20px);
+        }
+
+        .btn-generate {
+            display: block;
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px var(--primary-glow);
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 24px;
+        }
+
+        .btn-generate:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(168, 85, 247, 0.6);
+        }
+
+        .btn-generate:active {
+            transform: translateY(0);
+        }
+
+        /* Right Panel: Analytics */
+        .analytics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        @media (max-width: 650px) {
+            .analytics-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .kpi-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 18px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .kpi-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+        }
+
+        .kpi-title {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .kpi-value {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .kpi-sub {
+            font-size: 10px;
+            color: var(--accent);
+            margin-top: 4px;
+        }
+
+        /* Live Tracker styling */
+        .live-tracker {
+            background: rgba(168, 85, 247, 0.05);
+            border: 1px solid rgba(168, 85, 247, 0.2);
+            margin-bottom: 32px;
+            display: none; /* Shown dynamically when running */
+        }
+
+        .live-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .pulse-icon {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background-color: var(--primary);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--primary);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(168, 85, 247, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(168, 85, 247, 0); }
+        }
+
+        .progress-bar-bg {
+            background: rgba(255, 255, 255, 0.05);
+            height: 10px;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-bottom: 12px;
+        }
+
+        .progress-bar-fill {
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            height: 100%;
+            width: 0%;
+            transition: width 0.4s ease;
+        }
+
+        .progress-stats {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+
+        .console-log {
+            background: #020108;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 12px;
+            height: 140px;
+            overflow-y: auto;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12px;
+            color: #10b981;
+            line-height: 1.6;
+        }
+
+        /* Success State View */
+        .success-box {
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            display: none;
+        }
+
+        .success-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .success-info i {
+            font-size: 32px;
+            color: var(--accent);
+        }
+
+        .btn-download {
+            background: var(--accent);
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3);
+        }
+
+        /* Chart container */
+        .chart-card {
+            margin-bottom: 32px;
+        }
+
+        .chart-container {
+            height: 250px;
+            position: relative;
+        }
+
+        /* History Table */
+        .history-card {
+            overflow: hidden;
+        }
+
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 13px;
+        }
+
+        th {
+            background: rgba(255, 255, 255, 0.02);
+            color: var(--text-muted);
+            font-weight: 600;
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        td {
+            padding: 14px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            color: var(--text-main);
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.01);
+        }
+
+        .badge-mode-classic {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-muted);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+        }
+
+        .badge-mode-ai {
+            background: rgba(168, 85, 247, 0.1);
+            border: 1px solid rgba(168, 85, 247, 0.2);
+            color: #c084fc;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+        }
+
+        .btn-cancel {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .btn-cancel:hover {
+            background: rgba(239, 68, 68, 0.3);
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo">
+            <i class="fa-solid fa-book-open-reader"></i>
+            <span>AI Storybook Generator</span>
+        </div>
+        <div class="badge-mode">
+            <i class="fa-solid fa-server"></i>
+            <span id="api-status">Checking API...</span>
+        </div>
+    </header>
+
+    <div class="main-container">
+        
+        <!-- Left Panel: Form Control -->
+        <div class="glass-card">
+            <h2><i class="fa-solid fa-gears"></i> Creative Studio</h2>
+            <form id="generate-form">
+                <div class="form-group">
+                    <label for="title">Book Title</label>
+                    <input type="text" id="title" placeholder="My Magical Story Book" required value="The Moon Dragon's Adventure">
+                </div>
+
+                <div class="form-group">
+                    <label for="author">Author Name</label>
+                    <input type="text" id="author" placeholder="Author Name" required value="Unknown Creator">
+                </div>
+
+                <div class="form-group">
+                    <label for="story_text">Story / Poem Text</label>
+                    <textarea id="story_text" rows="8" placeholder="Paste your stanzas or paragraphs here..." required>The Little Moon Dragon lived above the silver clouds.
+Every evening he painted tiny stars across the night sky.
+He carried a glowing lantern that made sleepy children dream sweet dreams.
+
+One windy night, the lantern suddenly disappeared.
+The Little Moon Dragon searched through forests, rivers, and mountains looking for its magical light.
+Along the way he met a brave rabbit, a singing owl, and a giant turtle covered in moss.
+
+Together they followed sparkling footprints through the dark forest.
+At the top of the tallest hill, they discovered the lantern resting beside a sleeping fox.
+The fox had protected the lantern from the storm all night long.
+
+The Little Moon Dragon thanked his new friends and flew back into the sky.
+That evening the stars shined brighter than ever before.
+And from that day on, the Little Moon Dragon was never alone again.</textarea>
+                </div>
+
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="mode">Execution Mode</label>
+                        <select id="mode">
+                            <option value="ai_enhanced" selected>AI-Enhanced (Gemini)</option>
+                            <option value="classic">Classic (Regex/Offline)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="book_format">Book Size / Layout</label>
+                        <select id="book_format">
+                            <option value="a4" selected>A4 Portrait</option>
+                            <option value="a5">A5 Portrait</option>
+                            <option value="square">Square 210x210</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="style_idx">Illustration Style</label>
+                        <select id="style_idx">
+                            <option value="1" selected>Watercolor Explorer</option>
+                            <option value="2">Folk Tale Hero</option>
+                            <option value="3">Modern Graphic</option>
+                            <option value="4">Dreamy Traveler</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="image_fit_mode">Image Fitting</label>
+                        <select id="image_fit_mode">
+                            <option value="contain" selected>Contain (No crop)</option>
+                            <option value="cover">Cover (Full bleed)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="toggle-group">
+                    <div>
+                        <label style="margin-bottom:0; color:var(--text-main);" for="placeholders">Fast Placeholders Mode</label>
+                        <label style="margin-bottom:0; font-size:11px;">Skips AI drawing for layout test</label>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="placeholders">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="toggle-group">
+                    <div>
+                        <label style="margin-bottom:0; color:var(--text-main);" for="keep_consistent_look">IP-Adapter Consistency</label>
+                        <label style="margin-bottom:0; font-size:11px;">Locks character faces</label>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="keep_consistent_look" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <button type="submit" class="btn-generate">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Print-Ready PDF
+                </button>
+            </form>
+        </div>
+
+        <!-- Right Panel: Analytics & Log view -->
+        <div>
+            
+            <!-- Live Status Tracker -->
+            <div class="glass-card live-tracker" id="tracker-card">
+                <div class="live-header">
+                    <div>
+                        <span class="pulse-icon"></span>
+                        <strong style="margin-left: 8px; font-family: 'Outfit';">Generating Storybook...</strong>
+                    </div>
+                    <button class="btn-cancel" id="btn-cancel-task">Cancel</button>
+                </div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="progress-fill"></div>
+                </div>
+                <div class="progress-stats">
+                    <span id="tracker-stage">Stage: Story analysis</span>
+                    <span id="tracker-percent">0%</span>
+                </div>
+                <div class="console-log" id="tracker-console">
+                    <!-- Logs stream here -->
+                </div>
+            </div>
+
+            <!-- Success Box -->
+            <div class="success-box" id="success-card">
+                <div class="success-info">
+                    <i class="fa-solid fa-circle-check"></i>
+                    <div>
+                        <h4 style="font-family: 'Outfit'; font-size: 16px;">Generation Completed!</h4>
+                        <p style="font-size: 12px; color: var(--text-muted);" id="success-cost">Cost calculated: $0.00</p>
+                    </div>
+                </div>
+                <a href="#" class="btn-download" id="download-link" target="_blank">
+                    <i class="fa-solid fa-file-pdf"></i> Download PDF
+                </a>
+            </div>
+
+            <!-- Dashboard Analytics Grid -->
+            <div class="analytics-grid">
+                <div class="kpi-card">
+                    <div class="kpi-title">Total Cost</div>
+                    <div class="kpi-value" id="kpi-cost">$0.00</div>
+                    <div class="kpi-sub" id="kpi-caching-saving">100% saved (local)</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-title">Books Generated</div>
+                    <div class="kpi-value" id="kpi-books">0</div>
+                    <div class="kpi-sub" style="color:var(--secondary)">No runs yet</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-title">Total Tokens</div>
+                    <div class="kpi-value" id="kpi-tokens">0</div>
+                    <div class="kpi-sub" style="color:var(--text-muted)" id="kpi-cached-tokens">0 cached</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-title">Images Generated</div>
+                    <div class="kpi-value" id="kpi-images">0</div>
+                    <div class="kpi-sub" style="color:var(--text-muted)" id="kpi-img-provider">N/A</div>
+                </div>
+            </div>
+
+            <!-- Visual Chart -->
+            <div class="glass-card chart-card">
+                <h2><i class="fa-solid fa-chart-line"></i> Historical Token & Cost Efficiency</h2>
+                <div class="chart-container">
+                    <canvas id="costChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Run History Table -->
+            <div class="glass-card history-card">
+                <h2><i class="fa-solid fa-list-check"></i> Book Generation History</h2>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date/Time</th>
+                                <th>Book Title</th>
+                                <th>Mode</th>
+                                <th>Scenes</th>
+                                <th>Tokens Used</th>
+                                <th>Total Cost</th>
+                                <th>Artifact</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-tbody">
+                            <!-- Populated dynamically -->
+                            <tr>
+                                <td colspan="7" style="text-align: center; color: var(--text-muted);">No history logs found. Generate a book to begin tracking metrics.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        const API_URL = ""; // Relative routes
+        let chartInstance = null;
+
+        // On document load, fetch current configs and run history
+        document.addEventListener("DOMContentLoaded", () => {
+            fetchConfig();
+            fetchHistory();
+            
+            // Check status immediately in case it was compiling in background
+            checkStatus();
+            setInterval(checkStatus, 3000); // Check status every 3s
+        });
+
+        // Fetch configs and credentials status
+        function fetchConfig() {
+            fetch(`/api/config`)
+                .then(r => r.json())
+                .then(data => {
+                    const statusEl = document.getElementById("api-status");
+                    if (data.gemini_api_key_configured) {
+                        statusEl.innerHTML = "Gemini Key Configured";
+                        statusEl.parentElement.style.background = "rgba(16, 185, 129, 0.15)";
+                        statusEl.parentElement.style.borderColor = "rgba(16, 185, 129, 0.3)";
+                        statusEl.parentElement.style.color = "#a7f3d0";
+                    } else {
+                        statusEl.innerHTML = "Lacking Gemini API Key";
+                        statusEl.parentElement.style.background = "rgba(245, 158, 11, 0.15)";
+                        statusEl.parentElement.style.borderColor = "rgba(245, 158, 11, 0.3)";
+                        statusEl.parentElement.style.color = "#fef3c7";
+                    }
+                })
+                .catch(err => {
+                    document.getElementById("api-status").innerHTML = "Local API Offline";
+                });
+        }
+
+        // Fetch metrics log and update KPI cards + Chart
+        function fetchHistory() {
+            fetch(`/api/history`)
+                .then(r => r.json())
+                .then(history => {
+                    updateKPIs(history);
+                    renderHistoryTable(history);
+                    renderChart(history);
+                })
+                .catch(err => console.error("Error loading history logs:", err));
+        }
+
+        // Update top row KPIs
+        function updateKPIs(history) {
+            if (!history || history.length === 0) return;
+
+            let totalCost = 0.0;
+            let totalTokens = 0;
+            let totalCachedTokens = 0;
+            let totalImages = 0;
+            let geminiBooksCount = 0;
+
+            history.forEach(item => {
+                const met = item.metrics || {};
+                totalCost += met.total_cost_usd || 0;
+                totalTokens += (met.input_tokens || 0) + (met.output_tokens || 0) + (met.cached_tokens || 0);
+                totalCachedTokens += met.cached_tokens || 0;
+                totalImages += met.images_generated || 0;
+                if (item.mode === "ai_enhanced") geminiBooksCount++;
+            });
+
+            document.getElementById("kpi-cost").innerText = `$${totalCost.toFixed(5)}`;
+            document.getElementById("kpi-books").innerText = history.length;
+            document.getElementById("kpi-tokens").innerText = totalTokens.toLocaleString();
+            document.getElementById("kpi-images").innerText = totalImages;
+            
+            // Subtitles
+            document.getElementById("kpi-cached-tokens").innerText = `${totalCachedTokens.toLocaleString()} cached`;
+            
+            // Image fallback tracking
+            const lastRun = history[history.length - 1];
+            if (lastRun) {
+                document.getElementById("kpi-img-provider").innerText = lastRun.image_provider === "local_stable_diffusion" ? "Local SD" : lastRun.image_provider;
+            }
+
+            // Calculate context caching efficiency
+            let totalInputPlusCached = 0;
+            history.forEach(item => {
+                const met = item.metrics || {};
+                totalInputPlusCached += (met.input_tokens || 0) + (met.cached_tokens || 0);
+            });
+            if (totalInputPlusCached > 0) {
+                const efficiency = (totalCachedTokens / totalInputPlusCached) * 100;
+                document.getElementById("kpi-caching-saving").innerText = `${efficiency.toFixed(1)}% caching hit`;
+            }
+        }
+
+        // Populate history log table
+        function renderHistoryTable(history) {
+            const tbody = document.getElementById("history-tbody");
+            if (!history || history.length === 0) return;
+
+            tbody.innerHTML = "";
+            // Display newest first
+            [...history].reverse().forEach(item => {
+                const tr = document.createElement("tr");
+                const met = item.metrics || {};
+                const tokensCount = (met.input_tokens || 0) + (met.output_tokens || 0) + (met.cached_tokens || 0);
+                
+                const timeStr = item.timestamp ? item.timestamp.split(" ")[1] || item.timestamp : "N/A";
+                const dateStr = item.timestamp ? item.timestamp.split(" ")[0] || "" : "";
+                
+                const modeBadge = item.mode === "ai_enhanced" 
+                    ? `<span class="badge-mode-ai">AI</span>` 
+                    : `<span class="badge-mode-classic">Classic</span>`;
+                
+                const pdfName = item.book_title ? item.book_title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') + "_print_ready.pdf" : "";
+                
+                tr.innerHTML = `
+                    <td>
+                        <div style="font-weight:600;">${timeStr}</div>
+                        <div style="font-size:10px; color:var(--text-muted);">${dateStr}</div>
+                    </td>
+                    <td style="font-weight:600; color:var(--text-main);">${item.book_title || "Unknown"}</td>
+                    <td>${modeBadge}</td>
+                    <td>${item.scenes_count || 0} pages</td>
+                    <td>${tokensCount.toLocaleString()}</td>
+                    <td style="font-weight:600; color:var(--primary);">$${(met.total_cost_usd || 0).toFixed(5)}</td>
+                    <td>
+                        ${item.book_pdf 
+                            ? `<a href="/output/${item.book_pdf}" class="btn-download" style="padding: 6px 12px; font-size:11px;" download><i class="fa-solid fa-download"></i> PDF</a>`
+                            : `<span style="color:var(--text-muted)">N/A</span>`
+                        }
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Render Chart using Chart.js
+        function renderChart(history) {
+            const ctx = document.getElementById('costChart').getContext('2d');
+            
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
+
+            if (!history || history.length === 0) {
+                // Draw empty dummy chart
+                chartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: { labels: ['No Data'], datasets: [] },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+                return;
+            }
+
+            const labels = history.map((h, i) => h.book_title ? `${h.book_title.slice(0, 10)}...` : `Book ${i+1}`);
+            const costs = history.map(h => h.metrics ? h.metrics.total_cost_usd || 0.0 : 0.0);
+            const tokens = history.map(h => h.metrics ? ((h.metrics.input_tokens || 0) + (h.metrics.output_tokens || 0) + (h.metrics.cached_tokens || 0)) / 1000 : 0);
+
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Total Cost ($ USD)',
+                            data: costs,
+                            backgroundColor: 'rgba(168, 85, 247, 0.45)',
+                            borderColor: '#a855f7',
+                            borderWidth: 2,
+                            yAxisID: 'y',
+                            borderRadius: 4
+                        },
+                        {
+                            label: 'Tokens Used (Thousands)',
+                            data: tokens,
+                            type: 'line',
+                            fill: false,
+                            borderColor: '#06b6d4',
+                            tension: 0.1,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#9ca3af' }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: { display: true, text: 'USD Cost ($)', color: '#a855f7' },
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#a855f7' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: { display: true, text: 'Tokens (K)', color: '#06b6d4' },
+                            grid: { drawOnChartArea: false },
+                            ticks: { color: '#06b6d4' }
+                        }
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#f3f4f6' } }
+                    }
+                }
+            });
+        }
+
+        // Form submission triggers generation background task
+        document.getElementById("generate-form").addEventListener("submit", (e) => {
+            e.preventDefault();
+            
+            const reqData = {
+                title: document.getElementById("title").value,
+                author: document.getElementById("author").value,
+                story_text: document.getElementById("story_text").value,
+                mode: document.getElementById("mode").value,
+                book_format: document.getElementById("book_format").value,
+                image_fit_mode: document.getElementById("image_fit_mode").value,
+                style_idx: parseInt(document.getElementById("style_idx").value),
+                placeholders: document.getElementById("placeholders").checked,
+                keep_consistent_look: document.getElementById("keep_consistent_look").checked,
+                seed: 12345
+            };
+
+            fetch(`/api/generate`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(reqData)
+            })
+            .then(r => r.json())
+            .then(data => {
+                // Show live tracker card
+                document.getElementById("tracker-card").style.display = "block";
+                document.getElementById("success-card").style.display = "none";
+                checkStatus();
+            })
+            .catch(err => alert("Error starting generation pipeline: " + err));
+        });
+
+        // Cancel Active Task
+        document.getElementById("btn-cancel-task").addEventListener("click", () => {
+            fetch(`/api/cancel`, { method: "POST" })
+                .then(r => r.json())
+                .then(data => checkStatus())
+                .catch(err => console.error("Error cancelling task:", err));
+        });
+
+        // Poll current state
+        let lastStatus = "idle";
+        function checkStatus() {
+            fetch(`/api/status`)
+                .then(r => r.json())
+                .then(state => {
+                    if (state.status === "running") {
+                        document.getElementById("tracker-card").style.display = "block";
+                        document.getElementById("success-card").style.display = "none";
+                        
+                        document.getElementById("progress-fill").style.width = `${state.progress}%`;
+                        document.getElementById("tracker-percent").innerText = `${state.progress}%`;
+                        document.getElementById("tracker-stage").innerText = `Stage: ${state.stage}`;
+                        
+                        // Populate console logs
+                        const consoleEl = document.getElementById("tracker-console");
+                        consoleEl.innerHTML = state.logs.join("<br>");
+                        consoleEl.scrollTop = consoleEl.scrollHeight; // Autoscroll to bottom
+                    } else if (state.status === "success") {
+                        document.getElementById("tracker-card").style.display = "none";
+                        document.getElementById("success-card").style.display = "flex";
+                        
+                        document.getElementById("success-cost").innerText = `Estimated cost: $${state.total_cost.toFixed(5)} USD`;
+                        document.getElementById("download-link").href = `/output/${state.book_pdf}`;
+                        
+                        if (lastStatus === "running") {
+                            // Fetch history metrics and render again to reflect newly completed book
+                            fetchHistory();
+                        }
+                    } else if (state.status === "failed") {
+                        document.getElementById("tracker-card").style.display = "block";
+                        document.getElementById("tracker-percent").innerText = "FAILED";
+                        document.getElementById("tracker-stage").innerText = `Error: ${state.error || "Generation stopped."}`;
+                        
+                        const consoleEl = document.getElementById("tracker-console");
+                        consoleEl.innerHTML = state.logs.join("<br>");
+                        consoleEl.scrollTop = consoleEl.scrollHeight;
+                        
+                        if (lastStatus === "running") {
+                            fetchHistory();
+                        }
+                    } else {
+                        document.getElementById("tracker-card").style.display = "none";
+                    }
+                    lastStatus = state.status;
+                })
+                .catch(err => console.error("Error polling status:", err));
+        }
+    </script>
+
+</body>
+</html>
